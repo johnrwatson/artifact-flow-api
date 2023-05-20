@@ -16,6 +16,9 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Start mongodb Sidecar
+      run: docker-compose -f "./local-development/docker-compose-mongo.yml" up -d 
+
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
