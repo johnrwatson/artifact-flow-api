@@ -124,7 +124,7 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 
 	params :=
 
- mux.Vars(r)
+		mux.Vars(r)
 	id, _ := primitive.ObjectIDFromHex(params["id"])
 
 	collection := client.Database(dbName).Collection(collName)
