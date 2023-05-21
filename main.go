@@ -4,14 +4,13 @@ package main
 
 import (
 	"encoding/json"
-	"log"
-	"net/http"
-
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"log"
+	"net/http"
 )
 
 // Artifact represents an artifact record
@@ -78,11 +77,13 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	params := mux.Vars(r)
+
 	id, _ := primitive.ObjectIDFromHex(params["id"])
 
 	var artifact Artifact
 
 	collection := client.Database(dbName).Collection(collName)
+
 	err := collection.FindOne(r.Context(), bson.M{"_id": id}).Decode(&artifact)
 	if err != nil {
 		log.Fatal(err)
@@ -136,14 +137,21 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode("Artifact record deleted successfully.")
 }
 
-func main() {
-	// Initialize MongoDB client
+func setupMongoDbClient() {
+
 	clientOptions := options.Client().ApplyURI(connectionString)
 	var err error
 	client, err = mongo.Connect(nil, clientOptions)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+}
+
+func main() {
+
+	// Initialize MongoDB client
+	setupMongoDbClient()
 
 	// Initialize router
 	router := mux.NewRouter()
