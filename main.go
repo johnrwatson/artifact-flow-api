@@ -136,14 +136,21 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode("Artifact record deleted successfully.")
 }
 
-func main() {
-	// Initialize MongoDB client
+func setupMongoDbClient() {
+
 	clientOptions := options.Client().ApplyURI(connectionString)
 	var err error
 	client, err = mongo.Connect(nil, clientOptions)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+}
+
+func main() {
+
+	// Initialize MongoDB client
+	setupMongoDbClient()
 
 	// Initialize router
 	router := mux.NewRouter()
