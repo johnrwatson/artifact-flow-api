@@ -11,14 +11,17 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"net/http"
+	"fmt"
 )
 
-// Artifact represents an artifact record
+// Artifact represents a basic artifact record
 type Artifact struct {
-	ID          primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Name        string             `json:"name,omitempty" bson:"name,omitempty"`
-	Description string             `json:"description,omitempty" bson:"description,omitempty"`
-	Category    string             `json:"category,omitempty" bson:"category,omitempty"`
+	ID               primitive.ObjectID     `json:"id,omitempty" bson:"_id,omitempty"`
+	Name             string                 `json:"name,omitempty" bson:"name,omitempty"`
+	Description      string                 `json:"description,omitempty" bson:"description,omitempty"`
+	ArtifactType     string                 `json:"artifactType,omitempty" bson:"artifactType,omitempty"`
+	ArtifactFamily   string                 `json:"artifactFamily,omitempty" bson:"artifactFamily,omitempty"`
+	ArtifactMetadata map[string]interface{} `json:"artifactMetadata,omitempty" bson:"artifactMetadata,omitempty"`
 }
 
 // Connection string for MongoDB
@@ -59,10 +62,10 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 	collection := client.Database(dbName).Collection(collName)
 	cursor, err := collection.Find(r.Context(), bson.M{})
 
-    if err != nil {
-        http.Error(w, "Unable to check Artifact collection with unset ID", 500)
-        return
-    }
+	if err != nil {
+		http.Error(w, "Unable to check Artifact collection with unset ID", 500)
+		return
+	}
 
 	defer cursor.Close(r.Context())
 	for cursor.Next(r.Context()) {
@@ -79,27 +82,27 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	params := mux.Vars(r)
-	
-    // Access the value of the "id" parameter
-    idStr := params["id"]
 
-    // Convert the string ID to an ObjectID if not already
-    id, err := primitive.ObjectIDFromHex(idStr)
-    if err != nil {
-        http.Error(w, "Invalid Artifact ID", http.StatusBadRequest)
-        return
-    }
+	// Access the value of the "id" parameter
+	idStr := params["id"]
+
+	// Convert the string ID to an ObjectID if not already
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		http.Error(w, "Invalid Artifact ID", http.StatusBadRequest)
+		return
+	}
 
 	var artifact Artifact
 
 	collection := client.Database(dbName).Collection(collName)
 
 	err = collection.FindOne(r.Context(), bson.M{"_id": id}).Decode(&artifact)
-    if err != nil {
-        // Handle the error / return a response
-        http.Error(w, "Unable to find artifact with that ID", http.StatusBadRequest)
-        return
-    }
+	if err != nil {
+		// Handle the error / return a response
+		http.Error(w, "Unable to find artifact with that ID", http.StatusBadRequest)
+		return
+	}
 
 	json.NewEncoder(w).Encode(artifact)
 }
@@ -117,13 +120,16 @@ func updateArtifact(w http.ResponseWriter, r *http.Request) {
 	collection := client.Database(dbName).Collection(collName)
 	update := bson.M{
 		"$set": bson.M{
-			"name":        artifact.Name,
-			"description": artifact.Description,
-			"category":    artifact.Category,
+			"name":            artifact.Name,
+			"description":     artifact.Description,
+			"artifactType":    artifact.ArtifactType,
+			"artifactFamily":  artifact.ArtifactFamily,
+			"artifactMetadata": artifact.ArtifactMetadata,
 		},
 	}
 	_, err := collection.UpdateOne(r.Context(), bson.M{"_id": id}, update)
 	if err != nil {
+		fmt.Println("Error receieved")
 		log.Fatal(err)
 	}
 
