@@ -65,10 +65,16 @@ func TestArtifactCRUD(t *testing.T) {
 	artifactId := primitive.NewObjectID()
 
 	artifact := Artifact{
-		ID:          artifactId,
-		Name:        "Sample Artifact",
-		Description: "This is a sample artifact.",
-		Category:    "Miscellaneous",
+		ID:             artifactId,
+		Name:           "Sample Artifact",
+		Description:    "This is a sample artifact.",
+		ArtifactType:   "container",
+		ArtifactFamily: "test-family",
+		ArtifactMetadata: map[string]interface{}{
+			"repository":          "test-repository.git",
+			"repository_provider": "github",
+			"location":            "artifactory",
+		},
 	}
 
 	// Convert artifact to JSON
@@ -96,7 +102,7 @@ func TestArtifactCRUD(t *testing.T) {
 	// [R] Then READ the record using the GET endpoint
 
 	// Create a mock request to POST the artifact into the database
-	req, err = http.NewRequest("GET", "/artifacts/" + artifactId.Hex(), nil)
+	req, err = http.NewRequest("GET", "/artifacts/"+artifactId.Hex(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,14 +119,20 @@ func TestArtifactCRUD(t *testing.T) {
 	// Assert the ID value using testify/assert
 	assert.Equal(t, "Sample Artifact", artifact.Name)
 
-    // --------------------------------------------------------------------
+	// --------------------------------------------------------------------
 	// [U] Then attempt to UPDATE the record with a new name
 
 	artifact = Artifact{
-		ID:          artifactId,
-		Name:        "Sample Artifact Updated",
-		Description: "This is an updated sample artifact.",
-		Category:    "Miscellaneous",
+		ID:             artifactId,
+		Name:           "Sample Artifact Updated",
+		Description:    "This is an updated sample artifact.",
+		ArtifactType:   "container",
+		ArtifactFamily: "test-family",
+		ArtifactMetadata: map[string]interface{}{
+			"repository":          "test-repository.git",
+			"repository_provider": "github",
+			"location":            "artifactory",
+		},
 	}
 
 	// Convert artifact to JSON
@@ -130,7 +142,7 @@ func TestArtifactCRUD(t *testing.T) {
 	}
 
 	// Create a mock request to POST the artifact into the database
-	req, err = http.NewRequest("PUT", "/artifacts/" + artifactId.Hex(), bytes.NewBuffer(body))
+	req, err = http.NewRequest("PUT", "/artifacts/"+artifactId.Hex(), bytes.NewBuffer(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +159,7 @@ func TestArtifactCRUD(t *testing.T) {
 	// Assert the ID value using testify/assert
 	assert.Equal(t, "Sample Artifact Updated", artifact.Name)
 
-    // --------------------------------------------------------------------
+	// --------------------------------------------------------------------
 	// [D] Then attempt to DELETE the record with a new name
 
 	// Convert artifact to JSON
@@ -157,7 +169,7 @@ func TestArtifactCRUD(t *testing.T) {
 	}
 
 	// Create a mock request to POST the artifact into the database
-	req, err = http.NewRequest("DELETE", "/artifacts/" + artifactId.Hex(), bytes.NewBuffer(body))
+	req, err = http.NewRequest("DELETE", "/artifacts/"+artifactId.Hex(), bytes.NewBuffer(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,11 +183,11 @@ func TestArtifactCRUD(t *testing.T) {
 	// Call the getArtifacts function
 	deleteArtifact(rr, req)
 
-    // --------------------------------------------------------------------
-   	// [R] Then READ the - should be - missing record using the GET endpoint
+	// --------------------------------------------------------------------
+	// [R] Then READ the - should be - missing record using the GET endpoint
 
 	// Create a mock request to POST the artifact into the database
-	req, err = http.NewRequest("GET", "/artifacts/" + artifactId.Hex(), nil)
+	req, err = http.NewRequest("GET", "/artifacts/"+artifactId.Hex(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
