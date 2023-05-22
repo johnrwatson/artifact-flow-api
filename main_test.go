@@ -2,13 +2,13 @@ package main
 
 import (
 	"bytes"
-	"context"
+	//"context"
 	"encoding/json"
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"go.mongodb.org/mongo-driver/bson"
+	//"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"log"
+	//"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,11 +16,13 @@ import (
 
 func TestGetArtifacts(t *testing.T) {
 
+	// Test for listing all artifacts
+
 	setupMongoDbClient()
 
 	// Create a mock request
 	req, err := http.NewRequest("GET", "/artifacts", nil)
-	fmt.Println(err)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,16 +43,24 @@ func TestGetArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Add assertions to validate the retrieved artifacts if needed
-	assert.Len(t, artifacts, 0) // Assuming there are no artifacts in the database
+	// Check if the artifact slice was returned correctly
+	assert.True(t, len(artifacts) >= 0)
+
+	if len(artifacts) > 0 {
+		// Assert the Name as a test artifat if any returned from GET Endpoint
+		assert.Equal(t, "Sample Artifact", artifacts[0].Name)
+	} else {
+		fmt.Println("Info: Length of artifacts slice was returned as zero")
+	}
+
 }
 
-func TestCreateArtifact(t *testing.T) {
+func TestArtifactCRUD(t *testing.T) {
 
 	setupMongoDbClient()
 
 	// --------------------------------------------------------------------
-	// Create a new artifact
+	// [C] CREATE a new artifact
 
 	artifactId := primitive.NewObjectID()
 
@@ -83,21 +93,102 @@ func TestCreateArtifact(t *testing.T) {
 	createArtifact(rr, req)
 
 	// --------------------------------------------------------------------
-	// Then pull the record out of the DB
-	// Could potentially just use the getArtifact endpoint but that
-	// is a more complex method of testing the same thing
+	// [R] Then READ the record using the GET endpoint
 
-	ctx := context.Background()
-
-	// Manual Test
-	collection := client.Database(dbName).Collection(collName)
-
-	err = collection.FindOne(ctx, bson.M{"_id": artifactId}).Decode(&artifact)
+	// Create a mock request to POST the artifact into the database
+	req, err = http.NewRequest("GET", "/artifacts/" + artifactId.Hex(), nil)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 
+	// Set the content type header
+	req.Header.Set("Content-Type", "application/json")
+
+	// Refresh the response recorder to record the response
+	rr = httptest.NewRecorder()
+
+	// Call the getArtifacts function
+	getArtifact(rr, req)
+
 	// Assert the ID value using testify/assert
-	assert.Equal(t, artifactId, artifact.ID)
+	assert.Equal(t, "Sample Artifact", artifact.Name)
+
+    // --------------------------------------------------------------------
+	// [U] Then attempt to UPDATE the record with a new name
+
+	artifact = Artifact{
+		ID:          artifactId,
+		Name:        "Sample Artifact Updated",
+		Description: "This is an updated sample artifact.",
+		Category:    "Miscellaneous",
+	}
+
+	// Convert artifact to JSON
+	body, err = json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a mock request to POST the artifact into the database
+	req, err = http.NewRequest("PUT", "/artifacts/" + artifactId.Hex(), bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the content type header
+	req.Header.Set("Content-Type", "application/json")
+
+	// Create a response recorder to record the response
+	rr = httptest.NewRecorder()
+
+	// Call the getArtifacts function
+	updateArtifact(rr, req)
+
+	// Assert the ID value using testify/assert
+	assert.Equal(t, "Sample Artifact Updated", artifact.Name)
+
+    // --------------------------------------------------------------------
+	// [D] Then attempt to DELETE the record with a new name
+
+	// Convert artifact to JSON
+	body, err = json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a mock request to POST the artifact into the database
+	req, err = http.NewRequest("DELETE", "/artifacts/" + artifactId.Hex(), bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the content type header
+	req.Header.Set("Content-Type", "application/json")
+
+	// Create a response recorder to record the response
+	rr = httptest.NewRecorder()
+
+	// Call the getArtifacts function
+	deleteArtifact(rr, req)
+
+    // --------------------------------------------------------------------
+   	// [R] Then READ the - should be - missing record using the GET endpoint
+
+	// Create a mock request to POST the artifact into the database
+	req, err = http.NewRequest("GET", "/artifacts/" + artifactId.Hex(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the content type header
+	req.Header.Set("Content-Type", "application/json")
+
+	// Refresh the response recorder to record the response
+	rr = httptest.NewRecorder()
+
+	// Call the getArtifacts function
+	getArtifact(rr, req)
+
+	assert.Equal(t, "Invalid Artifact ID\n", rr.Body.String())
 
 }

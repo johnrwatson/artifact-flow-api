@@ -58,9 +58,11 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 
 	collection := client.Database(dbName).Collection(collName)
 	cursor, err := collection.Find(r.Context(), bson.M{})
-	if err != nil {
-		log.Fatal(err)
-	}
+
+    if err != nil {
+        http.Error(w, "Unable to check Artifact collection with unset ID", 500)
+        return
+    }
 
 	defer cursor.Close(r.Context())
 	for cursor.Next(r.Context()) {
@@ -77,17 +79,27 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	params := mux.Vars(r)
+	
+    // Access the value of the "id" parameter
+    idStr := params["id"]
 
-	id, _ := primitive.ObjectIDFromHex(params["id"])
+    // Convert the string ID to an ObjectID if not already
+    id, err := primitive.ObjectIDFromHex(idStr)
+    if err != nil {
+        http.Error(w, "Invalid Artifact ID", http.StatusBadRequest)
+        return
+    }
 
 	var artifact Artifact
 
 	collection := client.Database(dbName).Collection(collName)
 
-	err := collection.FindOne(r.Context(), bson.M{"_id": id}).Decode(&artifact)
-	if err != nil {
-		log.Fatal(err)
-	}
+	err = collection.FindOne(r.Context(), bson.M{"_id": id}).Decode(&artifact)
+    if err != nil {
+        // Handle the error / return a response
+        http.Error(w, "Unable to find artifact with that ID", http.StatusBadRequest)
+        return
+    }
 
 	json.NewEncoder(w).Encode(artifact)
 }
@@ -135,6 +147,7 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode("Artifact record deleted successfully.")
+
 }
 
 func setupMongoDbClient() {
