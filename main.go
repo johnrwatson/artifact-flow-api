@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -11,7 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"net/http"
-	"fmt"
+	"os"
 )
 
 // Artifact represents a basic artifact record
@@ -25,7 +26,6 @@ type Artifact struct {
 }
 
 // Connection string for MongoDB
-const connectionString = "mongodb://localhost:27017"
 
 // Database Name
 const dbName = "artifactdb"
@@ -36,17 +36,34 @@ const collName = "artifacts"
 // MongoDB client
 var client *mongo.Client
 
+// Get connection string
+func getConnectionString() string {
+
+	mongoDbConnectionString := os.Getenv("DB_CONNECTION_STRING")
+
+	// Check if the environment variable is set
+	if mongoDbConnectionString != "" {
+		return mongoDbConnectionString
+	}
+
+	// Return a default value if the environment variable is not set
+	return "mongodb://localhost:27017"
+}
+
 // Create an artifact record
 func createArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	fmt.Println("Info: Creating new Artifact")
 	var artifact Artifact
 	_ = json.NewDecoder(r.Body).Decode(&artifact)
 
 	collection := client.Database(dbName).Collection(collName)
 	result, err := collection.InsertOne(r.Context(), artifact)
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, "Unable to insert the record into the database", 500)
+		log.Println(err)
+		return
 	}
 
 	artifact.ID = result.InsertedID.(primitive.ObjectID)
@@ -57,6 +74,7 @@ func createArtifact(w http.ResponseWriter, r *http.Request) {
 func getArtifacts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	fmt.Println("Info: Getting all Artifacts")
 	var artifacts []Artifact
 
 	collection := client.Database(dbName).Collection(collName)
@@ -64,6 +82,7 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, "Unable to check Artifact collection with unset ID", 500)
+		log.Println(err)
 		return
 	}
 
@@ -81,6 +100,7 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 func getArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	fmt.Println("Info: Getting a specific artifact record")
 	params := mux.Vars(r)
 
 	// Access the value of the "id" parameter
@@ -90,6 +110,7 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 	id, err := primitive.ObjectIDFromHex(idStr)
 	if err != nil {
 		http.Error(w, "Invalid Artifact ID", http.StatusBadRequest)
+		log.Println(err)
 		return
 	}
 
@@ -101,6 +122,7 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Handle the error / return a response
 		http.Error(w, "Unable to find artifact with that ID", http.StatusBadRequest)
+		log.Println(err)
 		return
 	}
 
@@ -111,6 +133,8 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 func updateArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	fmt.Println("Info: Updating a specific artifact record")
+
 	params := mux.Vars(r)
 	id, _ := primitive.ObjectIDFromHex(params["id"])
 
@@ -120,17 +144,17 @@ func updateArtifact(w http.ResponseWriter, r *http.Request) {
 	collection := client.Database(dbName).Collection(collName)
 	update := bson.M{
 		"$set": bson.M{
-			"name":            artifact.Name,
-			"description":     artifact.Description,
-			"artifactType":    artifact.ArtifactType,
-			"artifactFamily":  artifact.ArtifactFamily,
+			"name":             artifact.Name,
+			"description":      artifact.Description,
+			"artifactType":     artifact.ArtifactType,
+			"artifactFamily":   artifact.ArtifactFamily,
 			"artifactMetadata": artifact.ArtifactMetadata,
 		},
 	}
 	_, err := collection.UpdateOne(r.Context(), bson.M{"_id": id}, update)
 	if err != nil {
 		fmt.Println("Error receieved")
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	artifact.ID = id
@@ -141,15 +165,16 @@ func updateArtifact(w http.ResponseWriter, r *http.Request) {
 func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	params :=
+	fmt.Println("Info: Deleting a specific artifact record")
 
-		mux.Vars(r)
+	params := mux.Vars(r)
 	id, _ := primitive.ObjectIDFromHex(params["id"])
 
 	collection := client.Database(dbName).Collection(collName)
 	_, err := collection.DeleteOne(r.Context(), bson.M{"_id": id})
 	if err != nil {
-		log.Fatal(err)
+        http.Error(w, "Unable to purge selected record out of the database", http.StatusBadRequest)
+		log.Println(err)
 	}
 
 	json.NewEncoder(w).Encode("Artifact record deleted successfully.")
@@ -158,12 +183,16 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 
 func setupMongoDbClient() {
 
+	connectionString := getConnectionString()
+
+	fmt.Println("Info: Setting up mongodb client")
 	clientOptions := options.Client().ApplyURI(connectionString)
 	var err error
 	client, err = mongo.Connect(nil, clientOptions)
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("Info: Successfully set up mongodb client")
 
 }
 
