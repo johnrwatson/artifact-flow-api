@@ -29,7 +29,6 @@ jobs:
           gcloud auth activate-service-account --key-file=./google_sa_key.json
           docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest .
           gcloud auth configure-docker us-west1-docker.pkg.dev
-          gcloud auth list
           docker push us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
@@ -39,5 +38,6 @@ jobs:
 
       - name: Kubernetes Deploy
         run: |
+          gcloud components install gke-gcloud-auth-plugin
           gcloud container clusters get-credentials artifact-flow --region us-west1 --project artifact-flow
           kubectl ${{ inputs.action }} -f ./hosting/kubernetes/deployment.yml
