@@ -30,3 +30,7 @@ jobs:
     - name: Test
       run: go test -v ./...
 
+    - name: Docker Build + Push
+      if: ${{ inputs.action }} == "create"
+      run: |
+        docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow-api:latest .

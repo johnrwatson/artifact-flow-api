@@ -1,0 +1,57 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: artifact-flow-api
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artifact-flow-api
+  namespace: artifact-flow-api
+spec:
+  selector:
+    matchLabels:
+      app: artifact-flow-api
+      department: artifact-flow-api
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: artifact-flow-api
+        department: artifact-flow-api
+    spec:
+      containers:
+      - env:
+        - name: DB_CONNECTION_STRING
+          value: mongodb://localhost:27017
+        name: artifact-flow-api
+        image: us-west1-docker.pkg.dev/artifact-flow-api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+      - name: mongodb
+        image: mongo:latest
+        ports:
+        - containerPort: 27017
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifact-flow-api
+  namespace: artifact-flow-api
+  labels:
+    app: artifact-flow-api
+    department: artifact-flow-api
+spec:
+  type: NodePort
+  selector:
+    app: artifact-flow-api
+    department: artifact-flow-api
+  ports:
+  - name:
+    port: 80
+    targetPort: 8080

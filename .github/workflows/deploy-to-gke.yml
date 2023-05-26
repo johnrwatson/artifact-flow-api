@@ -1,0 +1,41 @@
+name: Deploy Scheduled Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Create or Delete'
+        required: true
+        default: 'null'
+        type: choice
+        options:
+        - delete
+        - create
+
+jobs:
+  k8s-create-or-delete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install GCP CLI & Authenticate
+        run: |
+          curl https://sdk.cloud.google.com | bash
+          gcloud auth configure-docker us-west1-docker.pkg.dev
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+      - name: Docker Build + Push
+        if: ${{ inputs.action }} == "create"
+        run: |
+          docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow-api:latest .
+          docker push us-west1-docker.pkg.dev/artifact-flow-api:latest
+          
+      - name: Kubernetes Install
+        run: curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl && chmod +x ./kubectl && mv ./kubectl /usr/local/bin/kubectl
+
+      - name: Kubernetes Deploy
+        run: |
+          gcloud container clusters get-credentials artifact-flow --region us-west1 --project artifact-flow
+          kubectl ${{ inputs.action }} -f ./hosting/kubernetes/deployment.yml
