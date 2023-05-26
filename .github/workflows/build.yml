@@ -33,4 +33,4 @@ jobs:
     - name: Docker Build + Push
       if: ${{ inputs.action }} == "create"
       run: |
-        docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api:latest .
+        docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest .
