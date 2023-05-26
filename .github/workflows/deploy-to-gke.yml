@@ -38,6 +38,6 @@ jobs:
 
       - name: Kubernetes Deploy
         run: |
-          apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
+          sudo apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
           gcloud container clusters get-credentials artifact-flow --region us-west1 --project artifact-flow
           kubectl ${{ inputs.action }} -f ./hosting/kubernetes/deployment.yml
