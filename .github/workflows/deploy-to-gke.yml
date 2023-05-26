@@ -19,19 +19,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Install GCP CLI & Authenticate
-        run: |
-          curl https://sdk.cloud.google.com | bash
-          gcloud auth configure-docker us-west1-docker.pkg.dev
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      - name: Install GCP CLI
+        run: curl https://sdk.cloud.google.com | bash
 
       - name: Docker Build + Push
         if: ${{ inputs.action }} == "create"
         run: |
           gcloud auth list
           docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest .
+          gcloud auth configure-docker us-west1-docker.pkg.dev
           docker push us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
       - name: Kubernetes Install
         run: curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl && chmod +x ./kubectl && mv ./kubectl /usr/local/bin/kubectl
