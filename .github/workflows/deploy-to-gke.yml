@@ -29,6 +29,7 @@ jobs:
       - name: Docker Build + Push
         if: ${{ inputs.action }} == "create"
         run: |
+          gcloud auth list
           docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest .
           docker push us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
 
