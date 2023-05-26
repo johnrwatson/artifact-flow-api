@@ -29,9 +29,9 @@ jobs:
       - name: Docker Build + Push
         if: ${{ inputs.action }} == "create"
         run: |
-          docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow-api:latest .
-          docker push us-west1-docker.pkg.dev/artifact-flow-api:latest
-          
+          docker build --platform linux/amd64 -f ./hosting/Dockerfile -t us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest .
+          docker push us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
+
       - name: Kubernetes Install
         run: curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl && chmod +x ./kubectl && mv ./kubectl /usr/local/bin/kubectl
 
