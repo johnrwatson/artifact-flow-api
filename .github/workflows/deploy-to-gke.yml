@@ -14,7 +14,7 @@ on:
 
 jobs:
   k8s-create-or-delete:
-    runs-on: ubuntu-latest
+    runs-on: gcr.io/google.com/cloudsdktool/google-cloud-cli:latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -38,8 +38,7 @@ jobs:
 
       - name: Kubernetes Deploy
         run: |
-          gcloud components install gke-gcloud-auth-plugin || echo "Unable to install plugin"
           gcloud container clusters get-credentials artifact-flow --region us-west1 --project artifact-flow
           kubectl ${{ inputs.action }} -f ./hosting/kubernetes/deployment.yml
         env:
-          USE_GKE_GCLOUD_AUTH_PLUGIN: False
+          USE_GKE_GCLOUD_AUTH_PLUGIN: True
