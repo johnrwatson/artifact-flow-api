@@ -38,7 +38,8 @@ jobs:
 
       - name: Kubernetes Deploy
         run: |
+          gcloud components install gke-gcloud-auth-plugin || echo "Unable to install plugin"
           gcloud container clusters get-credentials artifact-flow --region us-west1 --project artifact-flow
           kubectl ${{ inputs.action }} -f ./hosting/kubernetes/deployment.yml
         env:
-          USE_GKE_GCLOUD_AUTH_PLUGIN: True
+          USE_GKE_GCLOUD_AUTH_PLUGIN: False
