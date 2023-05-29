@@ -43,11 +43,13 @@ kind: Service
 metadata:
   name: artifact-flow-api
   namespace: artifact-flow-api
+  annotations:
+      external-dns.alpha.kubernetes.io/hostname: api.artifact-flow.com
   labels:
     app: artifact-flow-api
     department: artifact-flow-api
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: artifact-flow-api
     department: artifact-flow-api
