@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Create or Delete'
+        description: 'Apply or Delete'
         required: true
         default: 'null'
         type: choice
         options:
         - delete
-        - create
+        - apply
 
 jobs:
-  k8s-create-or-delete:
+  k8s-apply-or-delete:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
@@ -23,7 +23,7 @@ jobs:
         run: curl https://sdk.cloud.google.com | bash
 
       - name: Docker Build + Push
-        if: ${{ inputs.action }} == "create"
+        if: ${{ inputs.action }} == "apply"
         run: |
           echo "$GOOGLE_CREDENTIALS" > ./google_sa_key.json
           gcloud auth activate-service-account --key-file=./google_sa_key.json
