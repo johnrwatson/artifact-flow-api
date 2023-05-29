@@ -30,7 +30,7 @@ spec:
         image: us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
         imagePullPolicy: Always
         ports:
-        - containerPort: 8080
+        - containerPort: 8000
         resources:
           requests:
             memory: "64Mi"
@@ -70,4 +70,4 @@ spec:
   ports:
   - name:
     port: 80
-    targetPort: 8080
+    targetPort: 8000
