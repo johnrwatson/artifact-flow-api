@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 // Artifact represents a basic artifact record
@@ -90,6 +91,122 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 	for cursor.Next(r.Context()) {
 		var artifact Artifact
 		cursor.Decode(&artifact)
+		artifacts = append(artifacts, artifact)
+	}
+
+	json.NewEncoder(w).Encode(artifacts)
+}
+
+func artifactMatchesFilter(artifact Artifact, filter struct {
+	SearchKey   string `json:"searchKey"`
+	SearchValue string `json:"searchValue"`
+}) bool {
+	if filter.SearchKey != "" && filter.SearchValue != "" {
+		// Check if the search key exists in the artifactMetadata field
+		if value, ok := artifact.ArtifactMetadata[filter.SearchKey]; ok {
+			// Compare the search value with the value in the artifactMetadata field
+			return value == filter.SearchValue
+		}
+	}
+
+	return false
+}
+
+// Recursive function to build the nested query
+func buildNestedQuery(keys []string, value string) interface{} {
+	if len(keys) == 1 {
+		return bson.M{keys[0]: value}
+	}
+
+	return bson.M{keys[0]: buildNestedQuery(keys[1:], value)}
+}
+
+// Search all artifact records
+func searchArtifacts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse request body
+	var filter struct {
+		SearchKey    string `json:"searchKey"`
+		SearchValue  string `json:"searchValue"`
+		SearchVerb   string `json:"searchVerb"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&filter); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Close the request body
+	defer r.Body.Close()
+
+	fmt.Println("Info: Searching Artifacts by " + filter.SearchKey + " where the attribute is set to " + filter.SearchValue + " with verb set to: " + filter.SearchVerb)
+
+	collection := client.Database(dbName).Collection(collName)
+
+	// Build the filter
+	query := bson.M{}
+	if filter.SearchKey != "" && filter.SearchValue != "" {
+		// If the search is within the artifactMetadata key, check for recursive search with `contains`
+		if strings.HasPrefix(filter.SearchKey, "artifactMetadata.") {
+			if filter.SearchVerb == "contains" {
+				nestedKeys := strings.Split(filter.SearchKey, ".")
+				lastKeyIndex := len(nestedKeys) - 1
+				lastKey := nestedKeys[lastKeyIndex]
+				parentKeys := nestedKeys[:lastKeyIndex]
+				nestedKeyQuery := bson.M{lastKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}}
+				for i := len(parentKeys) - 1; i >= 0; i-- {
+					parentKey := parentKeys[i]
+					nestedKeyQuery = bson.M{parentKey: nestedKeyQuery}
+				}
+				query["artifactMetadata"] = nestedKeyQuery
+            // If the search is within the artifactMetadata key, check for recursive search with `equals`
+			} else {
+				nestedKeys := strings.Split(filter.SearchKey, ".")
+				lastKeyIndex := len(nestedKeys) - 1
+				lastKey := nestedKeys[lastKeyIndex]
+				parentKeys := nestedKeys[:lastKeyIndex]
+				nestedKeyQuery := bson.M{lastKey: filter.SearchValue}
+				for i := len(parentKeys) - 1; i >= 0; i-- {
+					parentKey := parentKeys[i]
+					nestedKeyQuery = bson.M{parentKey: nestedKeyQuery}
+				}
+				query["artifactMetadata"] = nestedKeyQuery
+			}
+		// Otherwise it'll be a root key search (non-recursive)
+		} else {
+			// Simple key search with `contains`
+			if filter.SearchVerb == "contains" {
+				query["$or"] = []bson.M{
+					{filter.SearchKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}},
+					{"artifactMetadata." + filter.SearchKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}},
+				}
+			// Simple key search with `equals`
+			} else {
+				query["$or"] = []bson.M{
+					{filter.SearchKey: filter.SearchValue},
+					{"artifactMetadata." + filter.SearchKey: filter.SearchValue},
+				}
+			}
+		}
+	}
+
+	// Retrieve artifacts matching the query
+	var artifacts []Artifact
+	cursor, err := collection.Find(r.Context(), query)
+	if err != nil {
+		http.Error(w, "Unable to retrieve artifacts", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	defer cursor.Close(r.Context())
+	for cursor.Next(r.Context()) {
+		var artifact Artifact
+		if err := cursor.Decode(&artifact); err != nil {
+			log.Println("Error decoding artifact:", err)
+			continue
+		}
 		artifacts = append(artifacts, artifact)
 	}
 
@@ -207,6 +324,7 @@ func main() {
 	// API endpoints
 	router.HandleFunc("/artifacts", createArtifact).Methods("POST")
 	router.HandleFunc("/artifacts", getArtifacts).Methods("GET")
+	router.HandleFunc("/artifacts/search", searchArtifacts).Methods("POST")
 	router.HandleFunc("/artifacts/{id}", getArtifact).Methods("GET")
 	router.HandleFunc("/artifacts/{id}", updateArtifact).Methods("PUT")
 	router.HandleFunc("/artifacts/{id}", deleteArtifact).Methods("DELETE")

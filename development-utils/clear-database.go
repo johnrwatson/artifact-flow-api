@@ -1,9 +1,9 @@
 // clear-database.go
-// go run ./utils/clear-database.go 
+// go run ./development-utils/clear-database.go 
 // & will return the number of entries from the DB it cleared, like
 //
-// go run ./utils/clear-database.go
-// Deleted the following number of entries from the db: 0
+// go run ./development-utils/clear-database.go 
+// Deleted the following number of entries from the db: 36
 
 package main
 
