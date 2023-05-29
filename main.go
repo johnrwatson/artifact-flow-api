@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 // Artifact represents a basic artifact record
@@ -94,6 +95,100 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(artifacts)
+}
+
+func artifactMatchesFilter(artifact Artifact, filter struct {
+	SearchKey   string `json:"searchKey"`
+	SearchValue string `json:"searchValue"`
+}) bool {
+	if filter.SearchKey != "" && filter.SearchValue != "" {
+		// Check if the search key exists in the artifactMetadata field
+		if value, ok := artifact.ArtifactMetadata[filter.SearchKey]; ok {
+			// Compare the search value with the value in the artifactMetadata field
+			return value == filter.SearchValue
+		}
+	}
+
+	return false
+}
+
+// Recursive function to build the nested query
+func buildNestedQuery(keys []string, value string) interface{} {
+	if len(keys) == 1 {
+		return bson.M{keys[0]: value}
+	}
+
+	return bson.M{keys[0]: buildNestedQuery(keys[1:], value)}
+}
+
+// Search all artifact records
+func searchArtifacts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse request body
+	var filter struct {
+		SearchKey   string `json:"searchKey"`
+		SearchValue string `json:"searchValue"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&filter); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Close the request body
+	defer r.Body.Close()
+
+	fmt.Println("Info: Searching Artifacts by " + filter.SearchKey + " where the attribute is set to " + filter.SearchValue)
+
+	collection := client.Database(dbName).Collection(collName)
+
+	// Build the filter
+	query := bson.M{}
+	if filter.SearchKey != "" && filter.SearchValue != "" {
+		if strings.Contains(filter.SearchKey, "artifactMetadata.") {
+			nestedKeys := strings.Split(filter.SearchKey, ".")
+			nestedKeyQuery := bson.M{nestedKeys[len(nestedKeys)-1]: filter.SearchValue}
+
+			for i := len(nestedKeys) - 2; i >= 0; i-- {
+				nestedKeyQuery = bson.M{nestedKeys[i]: nestedKeyQuery}
+			}
+
+			query["artifactMetadata"] = nestedKeyQuery
+		} else {
+			query["$or"] = []bson.M{
+				{filter.SearchKey: filter.SearchValue},
+				{"artifactMetadata." + filter.SearchKey: filter.SearchValue},
+			}
+		}
+	}
+
+	fmt.Println("Filter:", filter)
+	fmt.Println("Query:", query)
+
+	// Retrieve artifacts matching the query
+	var artifacts []Artifact
+	cursor, err := collection.Find(r.Context(), query)
+	if err != nil {
+		http.Error(w, "Unable to retrieve artifacts", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	defer cursor.Close(r.Context())
+	for cursor.Next(r.Context()) {
+		var artifact Artifact
+		if err := cursor.Decode(&artifact); err != nil {
+			log.Println("Error decoding artifact:", err)
+			continue
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	fmt.Println("Filtered Artifacts:", artifacts)
+
+	json.NewEncoder(w).Encode(artifacts)
+
 }
 
 // Get a specific artifact record
@@ -207,6 +302,7 @@ func main() {
 	// API endpoints
 	router.HandleFunc("/artifacts", createArtifact).Methods("POST")
 	router.HandleFunc("/artifacts", getArtifacts).Methods("GET")
+	router.HandleFunc("/artifacts/search", searchArtifacts).Methods("POST")
 	router.HandleFunc("/artifacts/{id}", getArtifact).Methods("GET")
 	router.HandleFunc("/artifacts/{id}", updateArtifact).Methods("PUT")
 	router.HandleFunc("/artifacts/{id}", deleteArtifact).Methods("DELETE")
