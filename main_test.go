@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	//"go.mongodb.org/mongo-driver/bson"
+	"encoding/base64"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	//"log"
+	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"reflect"
+	"testing"
 )
 
 func TestGetArtifacts(t *testing.T) {
@@ -206,29 +208,88 @@ func TestArtifactCRUD(t *testing.T) {
 
 }
 
+func generateRandomID(length int) string {
+	randomBytes := make([]byte, length)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		panic(err) // Handle the error appropriately in your code
+	}
+
+	randomID := base64.URLEncoding.EncodeToString(randomBytes)
+	return randomID[:length] // Trim the string to the desired length
+}
+
+func compareSearchResult(searchReq *http.Request, expectedArtifact Artifact) (bool, error) {
+	// Create a new response recorder for the search
+	rr := httptest.NewRecorder()
+
+	// Set the content type header
+	searchReq.Header.Set("Content-Type", "application/json")
+
+	// Call the searchArtifacts function
+	searchArtifacts(rr, searchReq)
+
+	// Check the response status code
+	if rr.Code != http.StatusOK {
+		fmt.Println(rr)
+		return false, fmt.Errorf("Expected status code %d but got %d", http.StatusOK, rr.Code)
+	}
+
+	// Parse the response body
+	var searchResult []Artifact
+	if err := json.NewDecoder(rr.Body).Decode(&searchResult); err != nil {
+		return false, err
+	}
+
+	// Perform assertions on the search results
+	if len(searchResult) != 1 {
+		return false, fmt.Errorf("Expected 1 search result but got %d", len(searchResult))
+	}
+
+	// Assert specific artifact details
+	if !reflect.DeepEqual(searchResult[0], expectedArtifact) {
+		return false, fmt.Errorf("Search result does not match the expected artifact:\nExpected: %+v\nActual: %+v", expectedArtifact, searchResult[0])
+	}
+
+	return true, nil
+}
 
 func TestArtifactSearch(t *testing.T) {
 
 	setupMongoDbClient()
 
 	// --------------------------------------------------------------------
-	// [C] CREATE a new artifact
+	// [C] CREATE a new artifact to search for by unique search attributes
 
 	artifactId := primitive.NewObjectID()
+	randomSearchString := generateRandomID(8)       // Use the full string to allow searching for a specific artifact
+	randomSearchSubString := randomSearchString[:4] // Use the first four characters to search with `contains`
 
 	artifact := Artifact{
 		ID:             artifactId,
-		Name:           "Sample Search Artifact",
+		Name:           "Sample Search Artifact-" + randomSearchString, // name
 		Description:    "This is a sample search artifact.",
 		ArtifactType:   "container",
 		ArtifactFamily: "test-family",
 		ArtifactMetadata: map[string]interface{}{
 			"repository":          "searchy-repository.git",
 			"repository_provider": "searchy-provider",
-			"location":            "america",
-			"idTest":              artifactId.Hex(),
+			"location":            "shallow",
+			"deeperStruct": map[string]interface{}{
+				"metadata": "deep",
+				"secondNest": map[string]interface{}{
+					"doubleNested": "deeper-" + randomSearchString, // artifactMetadata.deeperStruct.secondNest.doubleNested
+				},
+			},
 		},
 	}
+
+	jsonArtifact, err := json.Marshal(artifact)
+	if err != nil {
+		log.Fatalf("Failed to marshal struct to JSON: %v", err)
+	}
+
+	log.Printf("JSON data: %s", jsonArtifact)
 
 	// Convert artifact to JSON
 	body, err := json.Marshal(artifact)
@@ -256,70 +317,60 @@ func TestArtifactSearch(t *testing.T) {
 		t.Errorf("Expected status code %d but got %d", http.StatusOK, rr.Code)
 	}
 
-    // --------------------------------------------------------------------
-	// [R] READ: Run a search for equals
+	// --------------------------------------------------------------------
+	// Test 1: Search for Root key with Contains
+	// Test 2: Search for Root key with Equals
+	// Test 3: Search for Deeply Nested key with Contains
+	// Test 4: Search for Deeply Nested key with Equals
+	// --------------------------------------------------------------------
 
-	// Create a mock request for searching artifacts
-	searchReq, err := http.NewRequest("POST", "/search", bytes.NewBuffer([]byte(`{
-		"searchKey": "idTest",
-		"searchValue": "` + artifactId.Hex() +`"
-	}`)))
+	searchPayload := []byte(`{
+		"searchKey": "name",
+		"searchValue": "` + randomSearchString + `",
+		"searchVerb": "contains"
+	}`)
+
+	// Test 1: Search for Root key with Contains
+	searchReq, err := http.NewRequest("POST", "/artifacts/search", bytes.NewBuffer(searchPayload))
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Set the content type header
-	searchReq.Header.Set("Content-Type", "application/json")
-
-	// Create a new response recorder for the search
-	rr = httptest.NewRecorder()
-
-	// Call the searchArtifacts function
-	searchArtifacts(rr, searchReq)
-
-	// Check the response status code
-	if rr.Code != http.StatusOK {
-		t.Errorf("Expected status code %d but got %d", http.StatusOK, rr.Code)
-	}
-
-	// Parse the response body
-	var searchResult []Artifact
-	if err := json.NewDecoder(rr.Body).Decode(&searchResult); err != nil {
+	match, err := compareSearchResult(searchReq, artifact)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Perform assertions on the search results
-	if len(searchResult) != 1 {
-		t.Errorf("Expected 1 search result but got %d", len(searchResult))
+	if !match {
+		t.Errorf("Search result does not match the expected artifact")
+	}
+	// --------------------------------------------------------------------
+	searchPayload = []byte(`{
+		"searchKey": "name",
+		"searchValue": "Sample Search Artifact-` + randomSearchString + `"
+	}`)
+
+	// Test 2: Search for Root key with Equals
+	searchReq, err = http.NewRequest("POST", "/artifacts/search", bytes.NewBuffer(searchPayload))
+
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// Assert specific artifact details
-	expectedArtifact := Artifact{
-		ID:             artifactId,
-		Name:           "Sample Search Artifact",
-		Description:    "This is a sample search artifact.",
-		ArtifactType:   "container",
-		ArtifactFamily: "test-family",
-		ArtifactMetadata: map[string]interface{}{
-			"repository":          "searchy-repository.git",
-			"repository_provider": "searchy-provider",
-			"location":            "america",
-			"idTest":              artifactId.Hex(),
-		},
+	match, err = compareSearchResult(searchReq, artifact)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(searchResult[0], expectedArtifact) {
-		t.Errorf("Search result does not match the expected artifact:\nExpected: %+v\nActual: %+v", expectedArtifact, searchResult[0])
+	if !match {
+		t.Errorf("Search result does not match the expected artifact")
 	}
-
-    // --------------------------------------------------------------------
-	// [R] READ: Run a search for contains
-
-	// Create a mock request for searching artifacts
-	searchReq, err = http.NewRequest("POST", "/search", bytes.NewBuffer([]byte(`{
-		"searchKey": "idTest",
-		"searchValue": "` + artifactId.Hex() +`",
+	// --------------------------------------------------------------------
+	// Test 3: Search for Deeply Nested key with Contains
+	searchReq, err = http.NewRequest("POST", "/artifacts/search", bytes.NewBuffer([]byte(`{
+		"searchKey": "artifactMetadata.deeperStruct.secondNest.doubleNested",
+		"searchValue": "`+randomSearchSubString+`",
 		"searchVerb": "contains"
 	}`)))
 
@@ -327,47 +378,33 @@ func TestArtifactSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Set the content type header
-	searchReq.Header.Set("Content-Type", "application/json")
-
-	// Create a new response recorder for the search
-	rr = httptest.NewRecorder()
-
-	// Call the searchArtifacts function
-	searchArtifacts(rr, searchReq)
-
-	// Check the response status code
-	if rr.Code != http.StatusOK {
-		t.Errorf("Expected status code %d but got %d", http.StatusOK, rr.Code)
-	}
-
-	// Parse the response body
-	if err := json.NewDecoder(rr.Body).Decode(&searchResult); err != nil {
+	match, err = compareSearchResult(searchReq, artifact)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Perform assertions on the search results
-	if len(searchResult) != 1 {
-		t.Errorf("Expected 1 search result but got %d", len(searchResult))
+	if !match {
+		t.Errorf("Search result does not match the expected artifact")
+	}
+	// --------------------------------------------------------------------
+	// Test 4: Search for Deeply Nested key with Equals
+	searchReq, err = http.NewRequest("POST", "/artifacts/search", bytes.NewBuffer([]byte(`{
+		"searchKey": "artifactMetadata.deeperStruct.secondNest.doubleNested",
+		"searchValue": "deeper-`+randomSearchString+`"
+	}`)))
+
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// Assert specific artifact details
-	expectedArtifact = Artifact{
-		ID:             artifactId,
-		Name:           "Sample Search Artifact",
-		Description:    "This is a sample search artifact.",
-		ArtifactType:   "container",
-		ArtifactFamily: "test-family",
-		ArtifactMetadata: map[string]interface{}{
-			"repository":          "searchy-repository.git",
-			"repository_provider": "searchy-provider",
-			"location":            "america",
-			"idTest":              artifactId.Hex(),
-		},
+	match, err = compareSearchResult(searchReq, artifact)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(searchResult[0], expectedArtifact) {
-		t.Errorf("Search result does not match the expected artifact:\nExpected: %+v\nActual: %+v", expectedArtifact, searchResult[0])
+	if !match {
+		t.Errorf("Search result does not match the expected artifact")
 	}
+	// -------------------------------------------------------------------
 
 }
