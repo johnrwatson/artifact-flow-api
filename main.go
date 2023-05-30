@@ -56,12 +56,20 @@ func createArtifact(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("Info: Creating new Artifact")
 	var artifact Artifact
-	_ = json.NewDecoder(r.Body).Decode(&artifact)
+	err := json.NewDecoder(r.Body).Decode(&artifact)
+
+	fmt.Println("Info: Parsed into JSON")
+
+	if err != nil {
+		http.Error(w, "Unable to decode json into artifact", 422)
+		log.Println(err)
+		return
+	}
 
 	collection := client.Database(dbName).Collection(collName)
 	result, err := collection.InsertOne(r.Context(), artifact)
 	if err != nil {
-		http.Error(w, "Unable to insert the record into the database", 500)
+		http.Error(w, "Unable to insert the record into the database", 417)
 		log.Println(err)
 		return
 	}
@@ -117,13 +125,13 @@ func searchArtifacts(w http.ResponseWriter, r *http.Request) {
 
 	// Parse request body
 	var filter struct {
-		SearchKey    string `json:"searchKey"`
-		SearchValue  string `json:"searchValue"`
-		SearchVerb   string `json:"searchVerb"`
+		SearchKey   string `json:"searchKey"`
+		SearchValue string `json:"searchValue"`
+		SearchVerb  string `json:"searchVerb"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&filter); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "Invalid request body", 422)
 		return
 	}
 
@@ -151,11 +159,11 @@ func searchArtifacts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Print the query to the log
-	queryJSON, err := json.Marshal(query)
+	_, err := json.Marshal(query)
 	if err != nil {
 		log.Println("Error marshaling query to JSON:", err)
-	} else {
-		log.Printf("Query: %s", queryJSON)
+		http.Error(w, "Unable to marshal database query response to JSON", 500)
+		return
 	}
 
 	// Retrieve artifacts matching the query
@@ -257,7 +265,7 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 	collection := client.Database(dbName).Collection(collName)
 	_, err := collection.DeleteOne(r.Context(), bson.M{"_id": id})
 	if err != nil {
-        http.Error(w, "Unable to purge selected record out of the database", http.StatusBadRequest)
+		http.Error(w, "Unable to purge selected record out of the database", http.StatusBadRequest)
 		log.Println(err)
 	}
 
