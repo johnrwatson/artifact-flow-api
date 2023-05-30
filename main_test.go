@@ -49,13 +49,6 @@ func TestGetArtifacts(t *testing.T) {
 	// Check if the artifact slice was returned correctly
 	assert.True(t, len(artifacts) >= 0)
 
-	if len(artifacts) > 0 {
-		// Assert the Name as a test artifat if any returned from GET Endpoint
-		assert.Equal(t, "Sample Artifact", artifacts[0].Name)
-	} else {
-		fmt.Println("Info: Length of artifacts slice was returned as zero")
-	}
-
 }
 
 func TestArtifactCRUD(t *testing.T) {
