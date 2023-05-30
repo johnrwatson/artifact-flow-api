@@ -13,7 +13,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 )
 
 // Artifact represents a basic artifact record
@@ -112,15 +111,6 @@ func artifactMatchesFilter(artifact Artifact, filter struct {
 	return false
 }
 
-// Recursive function to build the nested query
-func buildNestedQuery(keys []string, value string) interface{} {
-	if len(keys) == 1 {
-		return bson.M{keys[0]: value}
-	}
-
-	return bson.M{keys[0]: buildNestedQuery(keys[1:], value)}
-}
-
 // Search all artifact records
 func searchArtifacts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -147,48 +137,25 @@ func searchArtifacts(w http.ResponseWriter, r *http.Request) {
 	// Build the filter
 	query := bson.M{}
 	if filter.SearchKey != "" && filter.SearchValue != "" {
-		// If the search is within the artifactMetadata key, check for recursive search with `contains`
-		if strings.HasPrefix(filter.SearchKey, "artifactMetadata.") {
-			if filter.SearchVerb == "contains" {
-				nestedKeys := strings.Split(filter.SearchKey, ".")
-				lastKeyIndex := len(nestedKeys) - 1
-				lastKey := nestedKeys[lastKeyIndex]
-				parentKeys := nestedKeys[:lastKeyIndex]
-				nestedKeyQuery := bson.M{lastKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}}
-				for i := len(parentKeys) - 1; i >= 0; i-- {
-					parentKey := parentKeys[i]
-					nestedKeyQuery = bson.M{parentKey: nestedKeyQuery}
-				}
-				query["artifactMetadata"] = nestedKeyQuery
-            // If the search is within the artifactMetadata key, check for recursive search with `equals`
-			} else {
-				nestedKeys := strings.Split(filter.SearchKey, ".")
-				lastKeyIndex := len(nestedKeys) - 1
-				lastKey := nestedKeys[lastKeyIndex]
-				parentKeys := nestedKeys[:lastKeyIndex]
-				nestedKeyQuery := bson.M{lastKey: filter.SearchValue}
-				for i := len(parentKeys) - 1; i >= 0; i-- {
-					parentKey := parentKeys[i]
-					nestedKeyQuery = bson.M{parentKey: nestedKeyQuery}
-				}
-				query["artifactMetadata"] = nestedKeyQuery
+		if filter.SearchVerb == "contains" {
+			query["$or"] = []bson.M{
+				{filter.SearchKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}},
+				{"artifactMetadata." + filter.SearchKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}},
 			}
-		// Otherwise it'll be a root key search (non-recursive)
 		} else {
-			// Simple key search with `contains`
-			if filter.SearchVerb == "contains" {
-				query["$or"] = []bson.M{
-					{filter.SearchKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}},
-					{"artifactMetadata." + filter.SearchKey: primitive.Regex{Pattern: filter.SearchValue, Options: "i"}},
-				}
-			// Simple key search with `equals`
-			} else {
-				query["$or"] = []bson.M{
-					{filter.SearchKey: filter.SearchValue},
-					{"artifactMetadata." + filter.SearchKey: filter.SearchValue},
-				}
+			query["$or"] = []bson.M{
+				{filter.SearchKey: filter.SearchValue},
+				{"artifactMetadata." + filter.SearchKey: filter.SearchValue},
 			}
 		}
+	}
+
+	// Print the query to the log
+	queryJSON, err := json.Marshal(query)
+	if err != nil {
+		log.Println("Error marshaling query to JSON:", err)
+	} else {
+		log.Printf("Query: %s", queryJSON)
 	}
 
 	// Retrieve artifacts matching the query
