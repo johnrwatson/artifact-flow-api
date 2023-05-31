@@ -1,4 +1,3 @@
-# docker build --platform linux/amd64 -f ./hosting/Dockerfile -t artifact-flow-api:latest .
 FROM golang:1.19-buster as builder
 
 WORKDIR /app
@@ -8,11 +7,10 @@ RUN go mod download
 
 COPY . ./
 
-RUN go build -v -o /artifact-flow-api
+RUN go build -v -o /artifact-flow-api ./cmd/server
 
 FROM debian:buster-slim
 
-# Copy the binary to the production image from the builder stage.
 COPY --from=builder /artifact-flow-api /artifact-flow-api
 
 EXPOSE 8000

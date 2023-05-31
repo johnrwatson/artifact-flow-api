@@ -1,8 +1,7 @@
-// main.go
-
-package main
+package main 
 
 import (
+	auth "artifactflow.com/m/v2/cmd/auth"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
@@ -273,7 +272,7 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func setupMongoDbClient() {
+func setupMongoDbClient() bool {
 
 	connectionString := getConnectionString()
 
@@ -283,26 +282,50 @@ func setupMongoDbClient() {
 	client, err = mongo.Connect(nil, clientOptions)
 	if err != nil {
 		log.Fatal(err)
+		return false
 	}
 	fmt.Println("Info: Successfully set up mongodb client")
+
+	//err = client.Ping(context.Background(), nil)
+	//if err != nil {
+	//	log.Fatal("Error: Unable to connect to the MongoDB database.")
+	//	return false
+	//}
+
+	return true
 
 }
 
 func main() {
 
 	// Initialize MongoDB client
-	setupMongoDbClient()
+	setupDatabaseClient := setupMongoDbClient()
+
+	// Setup Oauth Provider
+	setupOauthProvider := auth.SetupOauthProvider()
+
+	if setupDatabaseClient == false || setupOauthProvider == false {
+		fmt.Sprintf("Error: Prereqs unable to be initialised:\n - Database Available: %v\n - Oauth Provider: %v", setupDatabaseClient, setupOauthProvider)
+		os.Exit(1)
+	}
 
 	// Initialize router
 	router := mux.NewRouter()
 
-	// API endpoints
+	// Puiblic API endpoints - Need to introduce versioning at some point
 	router.HandleFunc("/artifacts", createArtifact).Methods("POST")
 	router.HandleFunc("/artifacts", getArtifacts).Methods("GET")
 	router.HandleFunc("/artifacts/search", searchArtifacts).Methods("POST")
 	router.HandleFunc("/artifacts/{id}", getArtifact).Methods("GET")
 	router.HandleFunc("/artifacts/{id}", updateArtifact).Methods("PUT")
 	router.HandleFunc("/artifacts/{id}", deleteArtifact).Methods("DELETE")
+
+	// Auth Handlers
+	router.HandleFunc("/auth/login", auth.LoginHandler).Methods("GET")
+	router.HandleFunc("/auth/callback", auth.CallbackHandler).Methods("GET")
+
+	// Need auth backlogic here into the other API endpoints
+	router.HandleFunc("/protected", auth.ProtectedHandler).Methods("GET")
 
 	// Start the server
 	log.Fatal(http.ListenAndServe(":8000", router))

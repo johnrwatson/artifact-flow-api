@@ -13,3 +13,7 @@ services:
       - mongodb
     environment:
       DB_CONNECTION_STRING: mongodb://mongodb:27017
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
+      OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL}
+      OAUTH_JWT_KEY: ${OAUTH_JWT_KEY}
