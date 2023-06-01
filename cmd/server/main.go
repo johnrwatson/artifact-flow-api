@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"context"
 )
 
 // Artifact represents a basic artifact record
@@ -276,7 +277,6 @@ func setupMongoDbClient() bool {
 
 	connectionString := getConnectionString()
 
-	fmt.Println("Info: Setting up mongodb client")
 	clientOptions := options.Client().ApplyURI(connectionString)
 	var err error
 	client, err = mongo.Connect(nil, clientOptions)
@@ -284,14 +284,13 @@ func setupMongoDbClient() bool {
 		log.Fatal(err)
 		return false
 	}
-	fmt.Println("Info: Successfully set up mongodb client")
 
-	//err = client.Ping(context.Background(), nil)
-	//if err != nil {
-	//	log.Fatal("Error: Unable to connect to the MongoDB database.")
-	//	return false
-	//}
-
+	err = client.Ping(context.Background(), nil)
+	if err != nil {
+		log.Fatal("Error: Unable to connect to the MongoDB database.")
+		return false
+	}
+	fmt.Println("Info: Connected to the MongoDB database successfully.")
 	return true
 
 }
