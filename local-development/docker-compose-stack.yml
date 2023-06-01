@@ -1,7 +1,7 @@
 version: "3"
 services:
   mongodb:
-    image: mongo:latest
+    image: mongo:4
     ports:
       - "27017:27017"
 
@@ -13,3 +13,7 @@ services:
       - mongodb
     environment:
       DB_CONNECTION_STRING: mongodb://mongodb:27017
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
+      OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL}
+      OAUTH_JWT_KEY: ${OAUTH_JWT_KEY}

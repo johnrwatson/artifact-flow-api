@@ -22,3 +22,4 @@ go.work
 
 # Ignore any "sa_key" files
 *sa_key.json
+*.env
