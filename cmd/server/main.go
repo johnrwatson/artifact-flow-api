@@ -327,5 +327,5 @@ func main() {
 	router.HandleFunc("/protected", auth.ProtectedHandler).Methods("GET")
 
 	// Start the server
-	log.Fatal(http.ListenAndServe(":8000", router))
+	log.Fatal(http.ListenAndServe(":80", router))
 }

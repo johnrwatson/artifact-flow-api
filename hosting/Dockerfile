@@ -13,6 +13,6 @@ FROM debian:buster-slim
 
 COPY --from=builder /artifact-flow-api /artifact-flow-api
 
-EXPOSE 8000
+EXPOSE 80
 
 CMD [ "/artifact-flow-api" ]
