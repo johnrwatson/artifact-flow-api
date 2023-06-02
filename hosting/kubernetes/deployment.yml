@@ -32,8 +32,14 @@ spec:
           name: artifact-flow-api
           image: us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
           imagePullPolicy: Always
+          readinessProbe:
+            httpGet:
+              path: /artifacts
+              port: 80
+            failureThreshold: 1
+            periodSeconds: 10
           ports:
-          - containerPort: 8000
+          - containerPort: 80
           resources:
             requests:
               memory: "256Mi"
@@ -62,9 +68,9 @@ spec:
     app: artifact-flow-api
     department: artifact-flow-api
   ports:
-  - name:
-    port: 80
-    targetPort: 80
+    - protocol: TCP
+      port: 80
+      targetPort: 80
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -76,18 +82,13 @@ metadata:
     external-dns.alpha.kubernetes.io/hostname: api.artifact-flow.com
     kubernetes.io/ingress.regional-static-ip-name: artifact-flow-api-ip
     networking.gke.io/managed-certificates: artifact-flow-api-certificate
+    kubernetes.io/ingress.class: "gce"
 spec:
-  rules:
-  - host: api.artifact-flow.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: artifact-flow-api
-            port:
-              number: 80
+  defaultBackend:
+    service:
+      name: artifact-flow-api
+      port:
+        number: 80
 
 ---
 apiVersion: networking.gke.io/v1
