@@ -1,18 +1,19 @@
 package auth
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
-	"time"
-	"os"
-	"crypto/tls"
 	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"net/http"
+	"os"
+	"strings"
+	"log"
 )
+
 
 var (
 	googleConfig *oauth2.Config
@@ -20,10 +21,16 @@ var (
 	refreshToken string // Store the refresh token
 )
 
+type ResponseStruct struct {
+	Token        string `json:"api_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+
 // Claims represents the custom JWT claims structure
 type Claims struct {
-	Email     string `json:"email"`
-	ExpiresAt int64  `json:"exp"`
+	Email        string `json:"email"`
+	ExpiresAt    int64  `json:"exp"`
 	RefreshToken string `json:"refresh_token"` // Add this field
 	jwt.StandardClaims
 }
@@ -35,7 +42,7 @@ func SetupOauthProvider() bool {
 	oauthClientSecret := os.Getenv("OAUTH_CLIENT_SECRET")
 	oauthRedirectURL := os.Getenv("OAUTH_REDIRECT_URL")
 
-		// Check if any of the variables are empty or not set
+	// Check if any of the variables are empty or not set
 	if oauthClientId == "" || oauthClientSecret == "" || oauthRedirectURL == "" || os.Getenv("OAUTH_JWT_KEY") == "" {
 		fmt.Println("Error: One or more OAuth variables are not set, these are listed below: \n - OAUTH_CLIENT_ID\n - OAUTH_CLIENT_SECRET\n - OAUTH_REDIRECT_URL\n - OAUTH_JWT_KEY")
 		return false
@@ -58,9 +65,9 @@ func SetupOauthProvider() bool {
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
-	if googleConfig.RedirectURL != "http://localhost:8000" {
+	if googleConfig.RedirectURL != "http://localhost:80" {
 		// Before making the request, disable SSL certificate validation as the ca won't be valid
-	     http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
 	url := googleConfig.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
@@ -70,7 +77,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	code := r.FormValue("code")
 
-	if googleConfig.RedirectURL != "http://localhost:8000" {
+	if googleConfig.RedirectURL != "http://localhost:80" {
 		// Before making the request, disable SSL certificate validation as the ca won't be valid
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
@@ -103,13 +110,8 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	// Store the refresh token
 	refreshToken = token.RefreshToken
 
-    fmt.Println("Refresh token set to value below")
-	fmt.Println(refreshToken)
+	// Set the new refresh token
 	claims.RefreshToken = refreshToken
-
-	fmt.Println("This is the token passed back to the client")
-	fmt.Println(token)
-	fmt.Println(claims)
 
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := jwtToken.SignedString(jwtKey)
@@ -118,12 +120,24 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the token to the client
-	w.Write([]byte(tokenString))
+	responseStruct := ResponseStruct{
+		Token:        tokenString,
+		RefreshToken: refreshToken,
+	}
+
+	jsonData, err := json.Marshal(responseStruct)
+	if err != nil {
+		log.Println("Error marshaling JSON:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
+
 }
 
-
-func validateToken(tokenString string) (*Claims, error) {
+func ValidateToken(tokenString string) (*Claims, error) {
 	// Remove 'Bearer ' prefix from token string
 	if len(tokenString) > 7 && strings.ToUpper(tokenString[0:7]) == "BEARER " {
 		tokenString = tokenString[7:]
@@ -143,45 +157,13 @@ func validateToken(tokenString string) (*Claims, error) {
 	if !ok || !token.Valid {
 		return nil, errors.New("Invalid token")
 	}
-    fmt.Println(claims)
+	fmt.Println(claims)
 	return claims, nil
 }
 
-func ProtectedHandler(w http.ResponseWriter, r *http.Request) {
-	tokenString := r.Header.Get("Authorization")
-	if tokenString == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 
-	claims, err := validateToken(tokenString)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
 
-    fmt.Println(claims)
-	// Check if the token is expired
-	if time.Now().Unix() > claims.ExpiresAt {
-		// Token has expired, attempt token refresh
-		fmt.Println(claims.ExpiresAt)
-		fmt.Println(time.Now().Unix())
-		newToken, err := refreshAccessToken(claims.RefreshToken)
-		if err != nil {
-			http.Error(w, "Failed to create refresh token. Likely due to missing token in the claim from the original.", http.StatusInternalServerError)
-			fmt.Println(err)
-			return
-		}
-
-		// Update the token string
-		tokenString = newToken
-	}
-
-	// Access granted, do something with claims.Email
-	fmt.Fprintf(w, "Welcome, %s!", claims.Email)
-}
-
-func refreshAccessToken(refreshToken string) (string, error) {
+func RefreshAccessToken(refreshToken string) (string, error) {
 	if refreshToken == "" {
 		return "", errors.New("Refresh token not provided in original token")
 	}
@@ -232,4 +214,3 @@ func refreshAccessToken(refreshToken string) (string, error) {
 
 	return tokenString, nil
 }
-

@@ -1,7 +1,8 @@
-package main 
+package main
 
 import (
 	auth "artifactflow.com/m/v2/cmd/auth"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
@@ -12,7 +13,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"context"
+	"github.com/google/uuid"
+	"time"
 )
 
 // Artifact represents a basic artifact record
@@ -25,13 +27,21 @@ type Artifact struct {
 	ArtifactMetadata map[string]interface{} `json:"artifactMetadata,omitempty" bson:"artifactMetadata,omitempty"`
 }
 
-// Connection string for MongoDB
+// API Key Record
+type ApiKey struct {
+	ID            primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	UserID        string             `json:"userID,omitempty" bson:"userID,omitempty"`
+	Key           string             `json:"apikey,omitempty" bson:"apikey,omitempty"`
+	GeneratedDate time.Time          `json:"generatedDate,omitempty" bson:"generatedDate,omitempty"`
+}
 
-// Database Name
-const dbName = "artifactdb"
+// Database Names
+const artifactDbName = "artifactdb"
+const authDbName = "authdb"
 
-// Collection name
-const collName = "artifacts"
+// Collection names
+const artifactColName = "artifacts"
+const authTokenColName = "tokens"
 
 // MongoDB client
 var client *mongo.Client
@@ -66,7 +76,7 @@ func createArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	collection := client.Database(dbName).Collection(collName)
+	collection := client.Database(artifactDbName).Collection(artifactColName)
 	result, err := collection.InsertOne(r.Context(), artifact)
 	if err != nil {
 		http.Error(w, "Unable to insert the record into the database", 417)
@@ -85,7 +95,7 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Info: Getting all Artifacts")
 	var artifacts []Artifact
 
-	collection := client.Database(dbName).Collection(collName)
+	collection := client.Database(artifactDbName).Collection(artifactColName)
 	cursor, err := collection.Find(r.Context(), bson.M{})
 
 	if err != nil {
@@ -140,7 +150,7 @@ func searchArtifacts(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("Info: Searching Artifacts by " + filter.SearchKey + " where the attribute is set to " + filter.SearchValue + " with verb set to: " + filter.SearchVerb)
 
-	collection := client.Database(dbName).Collection(collName)
+	collection := client.Database(artifactDbName).Collection(artifactColName)
 
 	// Build the filter
 	query := bson.M{}
@@ -208,7 +218,7 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 
 	var artifact Artifact
 
-	collection := client.Database(dbName).Collection(collName)
+	collection := client.Database(artifactDbName).Collection(artifactColName)
 
 	err = collection.FindOne(r.Context(), bson.M{"_id": id}).Decode(&artifact)
 	if err != nil {
@@ -220,6 +230,64 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(artifact)
 }
+
+
+func generateAPIKey() (string, error) {
+	apiKey := uuid.New().String()
+	return apiKey, nil
+}
+
+
+func apiKeyHandler(w http.ResponseWriter, r *http.Request) {
+
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	claims, err := auth.ValidateToken(tokenString)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	// Check if the token is expired
+	if time.Now().Unix() > claims.ExpiresAt {
+		// Token has expired, attempt token refresh
+		newToken, err := auth.RefreshAccessToken(claims.RefreshToken)
+		if err != nil {
+			http.Error(w, "Failed to create refresh token. Likely due to missing token in the claim from the original.", http.StatusInternalServerError)
+			fmt.Println(err)
+			return
+		}
+
+		// Update the token string
+		tokenString = newToken
+	}
+
+	var apiKey ApiKey
+	apiKey.UserID = claims.Email    
+	apiKey.Key, err = generateAPIKey()
+	if err != nil {
+		http.Error(w, "Error generating API key", 500)
+		log.Println(err)
+		return
+	}
+	apiKey.GeneratedDate = time.Now() // Set the Generated Date
+
+	collection := client.Database(authDbName).Collection(authTokenColName)
+	result, err := collection.InsertOne(r.Context(), apiKey)
+	if err != nil {
+		http.Error(w, "Unable to insert the record into the database", 417)
+		log.Println(err)
+		return
+	}
+
+	apiKey.ID = result.InsertedID.(primitive.ObjectID)
+	json.NewEncoder(w).Encode(apiKey)
+}
+
 
 // Update an artifact record
 func updateArtifact(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +301,7 @@ func updateArtifact(w http.ResponseWriter, r *http.Request) {
 	var artifact Artifact
 	_ = json.NewDecoder(r.Body).Decode(&artifact)
 
-	collection := client.Database(dbName).Collection(collName)
+	collection := client.Database(artifactDbName).Collection(artifactColName)
 	update := bson.M{
 		"$set": bson.M{
 			"name":             artifact.Name,
@@ -262,7 +330,7 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id, _ := primitive.ObjectIDFromHex(params["id"])
 
-	collection := client.Database(dbName).Collection(collName)
+	collection := client.Database(artifactDbName).Collection(artifactColName)
 	_, err := collection.DeleteOne(r.Context(), bson.M{"_id": id})
 	if err != nil {
 		http.Error(w, "Unable to purge selected record out of the database", http.StatusBadRequest)
@@ -271,6 +339,17 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode("Artifact record deleted successfully.")
 
+}
+
+type HealthStatus struct {
+	Status string `json:"status"`
+}
+
+// Delete an artifact record
+func health(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	health := HealthStatus{Status: "healthy"}
+	json.NewEncoder(w).Encode(health)
 }
 
 func setupMongoDbClient() bool {
@@ -318,13 +397,12 @@ func main() {
 	router.HandleFunc("/artifacts/{id}", getArtifact).Methods("GET")
 	router.HandleFunc("/artifacts/{id}", updateArtifact).Methods("PUT")
 	router.HandleFunc("/artifacts/{id}", deleteArtifact).Methods("DELETE")
+	router.HandleFunc("/health", health).Methods("GET")
 
 	// Auth Handlers
 	router.HandleFunc("/auth/login", auth.LoginHandler).Methods("GET")
 	router.HandleFunc("/auth/callback", auth.CallbackHandler).Methods("GET")
-
-	// Need auth backlogic here into the other API endpoints
-	router.HandleFunc("/protected", auth.ProtectedHandler).Methods("GET")
+	router.HandleFunc("/auth/apikey", apiKeyHandler).Methods("GET")
 
 	// Start the server
 	log.Fatal(http.ListenAndServe(":80", router))

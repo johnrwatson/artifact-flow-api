@@ -1,8 +1,8 @@
 // clear-database.go
-// go run ./development-utils/clear-database.go 
+// go run ./development-utils/clear-database.go
 // & will return the number of entries from the DB it cleared, like
 //
-// go run ./development-utils/clear-database.go 
+// go run ./development-utils/clear-database.go
 // Deleted the following number of entries from the db: 36
 
 package main
@@ -10,10 +10,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"strconv"
 )
 
 // Connection string for MongoDB
@@ -45,17 +45,17 @@ func ClearDatabaseArtifacts() error {
 		return err
 	}
 
-	fmt.Println("Deleted the following number of entries from the db: " + strconv.FormatInt(res.DeletedCount,10))
+	fmt.Println("Deleted the following number of entries from the db: " + strconv.FormatInt(res.DeletedCount, 10))
 
 	// Close the MongoDB client connection
 	err = client.Disconnect(context.Background())
 	if err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
 func main() {
-  ClearDatabaseArtifacts()
+	ClearDatabaseArtifacts()
 }
