@@ -23,30 +23,29 @@ spec:
         department: artifact-flow-api
     spec:
       containers:
-      
-      - env:
-        - name: DB_CONNECTION_STRING
-          value: mongodb://localhost:27017
-        envFrom:
-          - secretRef:
-              name: artifact-flow-api-secrets
-        name: artifact-flow-api
-        image: us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8000
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "125m"
-      - name: mongodb
-        image: mongo:latest
-        ports:
-        - containerPort: 27017
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "125m"
+        - env:
+          - name: DB_CONNECTION_STRING
+            value: mongodb://localhost:27017
+          envFrom:
+            - secretRef:
+                name: artifact-flow-api-secrets
+          name: artifact-flow-api
+          image: us-west1-docker.pkg.dev/artifact-flow/artifact-flow-api/artifact-flow-core:latest
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 8000
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "125m"
+        - name: mongodb
+          image: mongo:latest
+          ports:
+          - containerPort: 27017
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "125m"
 
 ---
 apiVersion: v1
@@ -54,17 +53,48 @@ kind: Service
 metadata:
   name: artifact-flow-api
   namespace: artifact-flow-api
-  annotations:
-      external-dns.alpha.kubernetes.io/hostname: api.artifact-flow.com
   labels:
     app: artifact-flow-api
     department: artifact-flow-api
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app: artifact-flow-api
     department: artifact-flow-api
   ports:
   - name:
     port: 80
-    targetPort: 8000
+    targetPort: 80
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: artifact-flow-api-ingress
+  namespace: artifact-flow-api
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: api.artifact-flow.com
+    kubernetes.io/ingress.regional-static-ip-name: artifact-flow-api-ip
+    networking.gke.io/managed-certificates: artifact-flow-api-certificate
+spec:
+  rules:
+  - host: api.artifact-flow.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: artifact-flow-api
+            port:
+              number: 80
+
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: artifact-flow-api-certificate
+  namespace: artifact-flow-api
+spec:
+  domains:
+    - api.artifact-flow.com
