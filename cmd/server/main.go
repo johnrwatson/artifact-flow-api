@@ -3,6 +3,7 @@ package main
 import (
 	auth "artifactflow.com/m/v2/cmd/auth"
 	database "artifactflow.com/m/v2/cmd/database"
+	supporting "artifactflow.com/m/v2/cmd/supporting"
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
@@ -331,7 +332,7 @@ func main() {
 	router.HandleFunc("/artifacts/{id}", getArtifact).Methods("GET")
 	router.HandleFunc("/artifacts/{id}", updateArtifact).Methods("PUT")
 	router.HandleFunc("/artifacts/{id}", deleteArtifact).Methods("DELETE")
-	router.HandleFunc("/health", health).Methods("GET")
+    router.HandleFunc("/health", supporting.Health).Methods("GET")
 
 	// Auth Handlers
 	router.HandleFunc("/auth/login", auth.LoginHandler).Methods("GET")

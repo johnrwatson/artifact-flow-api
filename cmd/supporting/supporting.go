@@ -1,4 +1,4 @@
-package main
+package supporting
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ type HealthStatus struct {
 }
 
 // Respond with health
-func health(w http.ResponseWriter, r *http.Request) {
+func Health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	health := HealthStatus{Status: "healthy"}
 	json.NewEncoder(w).Encode(health)
