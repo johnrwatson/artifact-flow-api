@@ -2,18 +2,17 @@ package main
 
 import (
 	auth "artifactflow.com/m/v2/cmd/auth"
-	"context"
+	database "artifactflow.com/m/v2/cmd/database"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"net/http"
 	"os"
-	"github.com/google/uuid"
 	"time"
 )
 
@@ -45,20 +44,6 @@ const authTokenColName = "tokens"
 
 // MongoDB client
 var client *mongo.Client
-
-// Get connection string
-func getConnectionString() string {
-
-	mongoDbConnectionString := os.Getenv("DB_CONNECTION_STRING")
-
-	// Check if the environment variable is set
-	if mongoDbConnectionString != "" {
-		return mongoDbConnectionString
-	}
-
-	// Return a default value if the environment variable is not set
-	return "mongodb://localhost:27017"
-}
 
 // Create an artifact record
 func createArtifact(w http.ResponseWriter, r *http.Request) {
@@ -112,21 +97,6 @@ func getArtifacts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(artifacts)
-}
-
-func artifactMatchesFilter(artifact Artifact, filter struct {
-	SearchKey   string `json:"searchKey"`
-	SearchValue string `json:"searchValue"`
-}) bool {
-	if filter.SearchKey != "" && filter.SearchValue != "" {
-		// Check if the search key exists in the artifactMetadata field
-		if value, ok := artifact.ArtifactMetadata[filter.SearchKey]; ok {
-			// Compare the search value with the value in the artifactMetadata field
-			return value == filter.SearchValue
-		}
-	}
-
-	return false
 }
 
 // Search all artifact records
@@ -231,12 +201,10 @@ func getArtifact(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(artifact)
 }
 
-
 func generateAPIKey() (string, error) {
 	apiKey := uuid.New().String()
 	return apiKey, nil
 }
-
 
 func apiKeyHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -267,7 +235,7 @@ func apiKeyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var apiKey ApiKey
-	apiKey.UserID = claims.Email    
+	apiKey.UserID = claims.Email
 	apiKey.Key, err = generateAPIKey()
 	if err != nil {
 		http.Error(w, "Error generating API key", 500)
@@ -287,7 +255,6 @@ func apiKeyHandler(w http.ResponseWriter, r *http.Request) {
 	apiKey.ID = result.InsertedID.(primitive.ObjectID)
 	json.NewEncoder(w).Encode(apiKey)
 }
-
 
 // Update an artifact record
 func updateArtifact(w http.ResponseWriter, r *http.Request) {
@@ -341,43 +308,10 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 
 }
 
-type HealthStatus struct {
-	Status string `json:"status"`
-}
-
-// Delete an artifact record
-func health(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	health := HealthStatus{Status: "healthy"}
-	json.NewEncoder(w).Encode(health)
-}
-
-func setupMongoDbClient() bool {
-
-	connectionString := getConnectionString()
-
-	clientOptions := options.Client().ApplyURI(connectionString)
-	var err error
-	client, err = mongo.Connect(nil, clientOptions)
-	if err != nil {
-		log.Fatal(err)
-		return false
-	}
-
-	err = client.Ping(context.Background(), nil)
-	if err != nil {
-		log.Fatal("Error: Unable to connect to the MongoDB database.")
-		return false
-	}
-	fmt.Println("Info: Connected to the MongoDB database successfully.")
-	return true
-
-}
-
 func main() {
 
 	// Initialize MongoDB client
-	setupDatabaseClient := setupMongoDbClient()
+	setupDatabaseClient := database.SetupMongoDbClient()
 
 	// Setup Oauth Provider
 	setupOauthProvider := auth.SetupOauthProvider()

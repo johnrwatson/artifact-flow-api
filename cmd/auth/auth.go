@@ -8,12 +8,11 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"log"
 	"net/http"
 	"os"
 	"strings"
-	"log"
 )
-
 
 var (
 	googleConfig *oauth2.Config
@@ -25,7 +24,6 @@ type ResponseStruct struct {
 	Token        string `json:"api_token"`
 	RefreshToken string `json:"refresh_token"`
 }
-
 
 // Claims represents the custom JWT claims structure
 type Claims struct {
@@ -160,8 +158,6 @@ func ValidateToken(tokenString string) (*Claims, error) {
 	fmt.Println(claims)
 	return claims, nil
 }
-
-
 
 func RefreshAccessToken(refreshToken string) (string, error) {
 	if refreshToken == "" {

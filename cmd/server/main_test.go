@@ -1,6 +1,7 @@
 package main
 
 import (
+	database "artifactflow.com/m/v2/cmd/database"
 	"bytes"
 	//"context"
 	"encoding/json"
@@ -21,7 +22,7 @@ func TestGetArtifacts(t *testing.T) {
 
 	// Test for listing all artifacts
 
-	setupMongoDbClient()
+	database.SetupMongoDbClient()
 
 	// Create a mock request
 	req, err := http.NewRequest("GET", "/artifacts", nil)
@@ -53,7 +54,7 @@ func TestGetArtifacts(t *testing.T) {
 
 func TestArtifactCRUD(t *testing.T) {
 
-	setupMongoDbClient()
+	database.SetupMongoDbClient()
 
 	// --------------------------------------------------------------------
 	// [C] CREATE a new artifact
@@ -249,7 +250,7 @@ func compareSearchResult(searchReq *http.Request, expectedArtifact Artifact) (bo
 
 func TestArtifactSearch(t *testing.T) {
 
-	setupMongoDbClient()
+	database.SetupMongoDbClient()
 
 	// --------------------------------------------------------------------
 	// [C] CREATE a new artifact to search for by unique search attributes
