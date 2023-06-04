@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
+	//"go.mongodb.org/mongo-driver/mongo"
 	"log"
 	"net/http"
 	"os"
@@ -44,7 +44,7 @@ const artifactColName = "artifacts"
 const authTokenColName = "tokens"
 
 // MongoDB client
-var client *mongo.Client
+var client, _ = database.SetupMongoDbClient()
 
 // Create an artifact record
 func createArtifact(w http.ResponseWriter, r *http.Request) {
@@ -312,7 +312,7 @@ func deleteArtifact(w http.ResponseWriter, r *http.Request) {
 func main() {
 
 	// Initialize MongoDB client
-	setupDatabaseClient := database.SetupMongoDbClient()
+	_, setupDatabaseClient := database.SetupMongoDbClient()
 
 	// Setup Oauth Provider
 	setupOauthProvider := auth.SetupOauthProvider()

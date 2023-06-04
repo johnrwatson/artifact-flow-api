@@ -35,7 +35,7 @@ func GetConnectionString() string {
 	return "mongodb://localhost:27017"
 }
 
-func SetupMongoDbClient() bool {
+func SetupMongoDbClient() (*mongo.Client, bool) {
 
 	connectionString := GetConnectionString()
 
@@ -44,15 +44,15 @@ func SetupMongoDbClient() bool {
 	client, err = mongo.Connect(nil, clientOptions)
 	if err != nil {
 		log.Fatal(err)
-		return false
+		return client, false
 	}
 
 	err = client.Ping(context.Background(), nil)
 	if err != nil {
 		log.Fatal("Error: Unable to connect to the MongoDB database.")
-		return false
+		return client, false
 	}
 	fmt.Println("Info: Connected to the MongoDB database successfully.")
-	return true
+	return client, true
 
 }
