@@ -1,6 +1,7 @@
 package auth
 
 import (
+	database "artifactflow.com/m/v2/cmd/database"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -12,7 +13,16 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
+	"time"
+	"github.com/gorilla/sessions"
+
 )
+
+// Database & Collection for Auth
+const authDbName = "authdb"
+const authTokenColName = "tokens"
 
 var (
 	googleConfig *oauth2.Config
@@ -33,16 +43,34 @@ type Claims struct {
 	jwt.StandardClaims
 }
 
+// API Key Record
+type ApiKey struct {
+	ID            primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	UserID        string             `json:"userID,omitempty" bson:"userID,omitempty"`
+	Key           string             `json:"apikey,omitempty" bson:"apikey,omitempty"`
+	GeneratedDate time.Time          `json:"generatedDate,omitempty" bson:"generatedDate,omitempty"`
+}
+
+// Session Storage
+var (
+	Store  *sessions.CookieStore
+	Secret = []byte(os.Getenv("OAUTH_SESSION_SECRET"))
+)
+
+// MongoDB client
+var client, _ = database.SetupMongoDbClient()
+
 func SetupOauthProvider() bool {
 
 	// Set up Google OAuth2 configuration
 	oauthClientId := os.Getenv("OAUTH_CLIENT_ID")
 	oauthClientSecret := os.Getenv("OAUTH_CLIENT_SECRET")
 	oauthRedirectURL := os.Getenv("OAUTH_REDIRECT_URL")
+	oauthSessionSecret := os.Getenv("OAUTH_SESSION_SECRET")
 
 	// Check if any of the variables are empty or not set
-	if oauthClientId == "" || oauthClientSecret == "" || oauthRedirectURL == "" || os.Getenv("OAUTH_JWT_KEY") == "" {
-		fmt.Println("Error: One or more OAuth variables are not set, these are listed below: \n - OAUTH_CLIENT_ID\n - OAUTH_CLIENT_SECRET\n - OAUTH_REDIRECT_URL\n - OAUTH_JWT_KEY")
+	if oauthClientId == "" || oauthClientSecret == "" || oauthRedirectURL == "" || oauthSessionSecret == "" || os.Getenv("OAUTH_JWT_KEY") == "" {
+		fmt.Println("Error: One or more OAuth variables are not set, these are listed below: \n - OAUTH_CLIENT_ID\n - OAUTH_CLIENT_SECRET\n - OAUTH_REDIRECT_URL\n - OAUTH_SESSION_SECRET\n - OAUTH_JWT_KEY")
 		return false
 	}
 
@@ -111,6 +139,25 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	// Set the new refresh token
 	claims.RefreshToken = refreshToken
 
+    // Create a new session for the user
+	session, err := Store.Get(r, "session-name")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Store the user ID in the session
+	session.Values["emailID"] = claims.Email
+	session.Values["uuid"], err = generateAPIKey()
+	if err != nil {
+		http.Error(w, "Error generating uuid session key", 500)
+		log.Println(err)
+		return
+	}
+	session.Save(r, w)
+
+	log.Println("Lodged user in session store:", session.Values["emailID"], session.Values["uuid"])
+
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := jwtToken.SignedString(jwtKey)
 	if err != nil {
@@ -133,30 +180,6 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonData)
 
-}
-
-func ValidateToken(tokenString string) (*Claims, error) {
-	// Remove 'Bearer ' prefix from token string
-	if len(tokenString) > 7 && strings.ToUpper(tokenString[0:7]) == "BEARER " {
-		tokenString = tokenString[7:]
-	}
-
-	fmt.Println(tokenString)
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	})
-	if err != nil {
-		return nil, errors.New("Failed to parse token")
-	}
-
-	fmt.Println(token)
-	fmt.Println(token.Claims.(*Claims))
-	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
-		return nil, errors.New("Invalid token")
-	}
-	fmt.Println(claims)
-	return claims, nil
 }
 
 func RefreshAccessToken(refreshToken string) (string, error) {
@@ -209,4 +232,130 @@ func RefreshAccessToken(refreshToken string) (string, error) {
 	}
 
 	return tokenString, nil
+}
+
+func ValidateToken(w http.ResponseWriter, r *http.Request) (*Claims, error) {
+
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		return nil, errors.New("Not able to process token from http headers")
+	}
+
+	// Remove 'Bearer ' prefix from token string
+	if len(tokenString) > 7 && strings.ToUpper(tokenString[0:7]) == "BEARER " {
+		tokenString = tokenString[7:]
+	}
+    
+	claims, err := getTokenClaims(w,r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+	}
+	
+	// Check if the token is expired + if so generate a new one
+	if time.Now().Unix() > claims.ExpiresAt {
+		tokenString, err = RefreshAccessToken(claims.RefreshToken)
+		if err != nil {
+			http.Error(w, "Failed to create refresh token. Likely due to missing token in the claim from the original or the original is invalid.", http.StatusUnauthorized)
+			fmt.Println(err)
+		}
+	}
+
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil {
+		return nil, errors.New("Failed to parse token")
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, errors.New("Invalid token")
+	}
+
+	return claims, nil
+}
+
+func getTokenClaims(w http.ResponseWriter, r *http.Request) (*Claims, error) {
+
+	claims, err := ValidateToken(w,r)
+	
+	if err != nil {
+		return nil, err
+	}
+
+	return claims, nil
+
+}
+
+
+// When requesting a oauth token we need to skip the token validation inside the middleware
+// & complete the full redirect without handling it
+// All other requests should continue through the middelware process as normal
+func Middleware(next http.Handler) http.Handler  {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		
+		if (r.URL.Path == "/artifacts") {
+            log.Println("Received request in Authentication:", r.Method, r.URL.Path)
+			_, err := getTokenClaims(w,r)
+
+			if err.Error() == "Not able to process token from http headers" {
+
+			    // Check if there is a session for this user
+				session, err := Store.Get(r, "session-name")
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+
+				// Retrieve the user ID from the session
+				_, ok := session.Values["emailID"].(string)
+				if !ok {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+
+			} else if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+
+		}
+		
+		next.ServeHTTP(w, r)
+		
+	})
+}
+
+func generateAPIKey() (string, error) {
+	apiKey := uuid.New().String()
+	return apiKey, nil
+}
+
+func ApiKeyHandler(w http.ResponseWriter, r *http.Request) {
+
+	claims, err := getTokenClaims(w,r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+	}
+
+	var apiKey ApiKey
+	apiKey.UserID = claims.Email
+	apiKey.Key, err = generateAPIKey()
+	if err != nil {
+		http.Error(w, "Error generating API key", 500)
+		log.Println(err)
+		return
+	}
+	apiKey.GeneratedDate = time.Now() // Set the Generated Date
+
+	collection := client.Database(authDbName).Collection(authTokenColName)
+	result, err := collection.InsertOne(r.Context(), apiKey)
+	if err != nil {
+		http.Error(w, "Unable to insert the record into the database", 417)
+		log.Println(err)
+		return
+	}
+
+	apiKey.ID = result.InsertedID.(primitive.ObjectID)
+	json.NewEncoder(w).Encode(apiKey)
 }
