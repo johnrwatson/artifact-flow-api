@@ -45,13 +45,13 @@ func main() {
 	router.HandleFunc("/artifacts/{id}", artifacts.UpdateArtifact).Methods("PUT")    
 	router.HandleFunc("/artifacts/{id}", artifacts.DeleteArtifact).Methods("DELETE") 
 
-	// Supporting Handlers
-    router.HandleFunc("/health", supporting.Health).Methods("GET")          
+	// Protected Auth Handlers
+	router.HandleFunc("/auth/apikey", auth.ApiKeyHandler).Methods("GET")
 
-	// Auth Handlers
+	// Unprotected Supporting Handlers
+    router.HandleFunc("/health", supporting.Health).Methods("GET")          
 	router.HandleFunc("/auth/login", auth.LoginHandler).Methods("GET")
 	router.HandleFunc("/auth/callback", auth.CallbackHandler).Methods("GET")
-	router.HandleFunc("/auth/apikey", auth.ApiKeyHandler).Methods("GET")
 
 	// Start the server
 	log.Fatal(http.ListenAndServe(":80", router))
