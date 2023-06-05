@@ -7,17 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/uuid"
+	"github.com/gorilla/sessions"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"log"
 	"net/http"
 	"os"
 	"strings"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"github.com/google/uuid"
 	"time"
-	"github.com/gorilla/sessions"
-
 )
 
 // Database & Collection for Auth
@@ -139,7 +138,7 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	// Set the new refresh token
 	claims.RefreshToken = refreshToken
 
-    // Create a new session for the user
+	// Create a new session for the user
 	session, err := Store.Get(r, "session-name")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -245,12 +244,12 @@ func ValidateToken(w http.ResponseWriter, r *http.Request) (*Claims, error) {
 	if len(tokenString) > 7 && strings.ToUpper(tokenString[0:7]) == "BEARER " {
 		tokenString = tokenString[7:]
 	}
-    
-	claims, err := getTokenClaims(w,r)
+
+	claims, err := getTokenClaims(w, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 	}
-	
+
 	// Check if the token is expired + if so generate a new one
 	if time.Now().Unix() > claims.ExpiresAt {
 		tokenString, err = RefreshAccessToken(claims.RefreshToken)
@@ -277,8 +276,8 @@ func ValidateToken(w http.ResponseWriter, r *http.Request) (*Claims, error) {
 
 func getTokenClaims(w http.ResponseWriter, r *http.Request) (*Claims, error) {
 
-	claims, err := ValidateToken(w,r)
-	
+	claims, err := ValidateToken(w, r)
+
 	if err != nil {
 		return nil, err
 	}
@@ -287,20 +286,26 @@ func getTokenClaims(w http.ResponseWriter, r *http.Request) (*Claims, error) {
 
 }
 
-
 // When requesting a oauth token we need to skip the token validation inside the middleware
 // & complete the full redirect without handling it
 // All other requests should continue through the middelware process as normal
-func Middleware(next http.Handler) http.Handler  {
+func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		
-		if (r.URL.Path != "/health" && r.URL.Path != "/auth/login" && r.URL.Path != "/auth/callback") {
-            log.Println("Received request in Authentication:", r.Method, r.URL.Path)
-			_, err := getTokenClaims(w,r)
+
+		// Check if authentication is disabled
+		if os.Getenv("OPEN_ENDPOINTS") == "true" {
+			log.Println("OPEN_ENDPOINTS set to true, authentication disabled:", r.Method, r.URL.Path)
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if r.URL.Path != "/health" && r.URL.Path != "/auth/login" && r.URL.Path != "/auth/callback" {
+			log.Println("Received request in Authentication:", r.Method, r.URL.Path)
+			_, err := getTokenClaims(w, r)
 
 			if err.Error() == "Not able to process token from http headers" {
 
-			    // Check if there is a session for this user
+				// Check if there is a session for this user
 				session, err := Store.Get(r, "session-name")
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -320,9 +325,9 @@ func Middleware(next http.Handler) http.Handler  {
 			}
 
 		}
-		
+
 		next.ServeHTTP(w, r)
-		
+
 	})
 }
 
@@ -333,7 +338,7 @@ func generateAPIKey() (string, error) {
 
 func ApiKeyHandler(w http.ResponseWriter, r *http.Request) {
 
-	claims, err := getTokenClaims(w,r)
+	claims, err := getTokenClaims(w, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 	}

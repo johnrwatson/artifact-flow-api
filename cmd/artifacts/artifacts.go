@@ -4,11 +4,11 @@ import (
 	database "artifactflow.com/m/v2/cmd/database"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"net/http"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/bson"
-	"github.com/gorilla/mux"
 )
 
 // Artifact represents a basic artifact record
