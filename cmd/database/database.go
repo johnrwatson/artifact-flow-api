@@ -1,13 +1,12 @@
-
 package database
 
 import (
-	"fmt"
-	"os"
-	"log"
 	"context"
+	"fmt"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"log"
+	"os"
 )
 
 // MongoDB client

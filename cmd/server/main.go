@@ -1,10 +1,11 @@
 package main
 
 import (
-	auth "artifactflow.com/m/v2/cmd/auth"
-	supporting "artifactflow.com/m/v2/cmd/supporting"
 	artifacts "artifactflow.com/m/v2/cmd/artifacts"
+	auth "artifactflow.com/m/v2/cmd/auth"
 	database "artifactflow.com/m/v2/cmd/database"
+	supporting "artifactflow.com/m/v2/cmd/supporting"
+	validation "artifactflow.com/m/v2/cmd/validation"
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -38,18 +39,22 @@ func main() {
 	router.Use(auth.Middleware)
 
 	// API endpoints for Artifacts
-	router.HandleFunc("/artifacts", artifacts.CreateArtifact).Methods("POST")        
-	router.HandleFunc("/artifacts", artifacts.GetArtifacts).Methods("GET")           
+	router.HandleFunc("/artifacts", artifacts.CreateArtifact).Methods("POST")
+	router.HandleFunc("/artifacts", artifacts.GetArtifacts).Methods("GET")
 	router.HandleFunc("/artifacts/search", artifacts.SearchArtifacts).Methods("POST")
 	router.HandleFunc("/artifacts/{id}", artifacts.GetArtifact).Methods("GET")
-	router.HandleFunc("/artifacts/{id}", artifacts.UpdateArtifact).Methods("PUT")    
-	router.HandleFunc("/artifacts/{id}", artifacts.DeleteArtifact).Methods("DELETE") 
+	router.HandleFunc("/artifacts/{id}", artifacts.UpdateArtifact).Methods("PUT")
+	router.HandleFunc("/artifacts/{id}", artifacts.DeleteArtifact).Methods("DELETE")
+
+	// API endpoints for ValidationRules
+	router.HandleFunc("/validation/rules", validation.CreateRule).Methods("POST")
+	router.HandleFunc("/validation/rules", validation.GetRules).Methods("GET")
 
 	// Protected Auth Handlers
 	router.HandleFunc("/auth/apikey", auth.ApiKeyHandler).Methods("GET")
 
 	// Unprotected Supporting Handlers
-    router.HandleFunc("/health", supporting.Health).Methods("GET")          
+	router.HandleFunc("/health", supporting.Health).Methods("GET")
 	router.HandleFunc("/auth/login", auth.LoginHandler).Methods("GET")
 	router.HandleFunc("/auth/callback", auth.CallbackHandler).Methods("GET")
 
