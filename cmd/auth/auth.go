@@ -294,7 +294,7 @@ func getTokenClaims(w http.ResponseWriter, r *http.Request) (*Claims, error) {
 func Middleware(next http.Handler) http.Handler  {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		
-		if (r.URL.Path != "/health" || r.URL.Path != "/auth/login" || r.URL.Path != "/auth/callback") {
+		if (r.URL.Path != "/health" && r.URL.Path != "/auth/login" && r.URL.Path != "/auth/callback") {
             log.Println("Received request in Authentication:", r.Method, r.URL.Path)
 			_, err := getTokenClaims(w,r)
 

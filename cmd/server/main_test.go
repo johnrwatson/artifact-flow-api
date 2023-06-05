@@ -2,6 +2,7 @@ package main
 
 import (
 	database "artifactflow.com/m/v2/cmd/database"
+	artifacts "artifactflow.com/m/v2/cmd/artifacts"
 	"bytes"
 	//"context"
 	"encoding/json"
@@ -35,13 +36,13 @@ func TestGetArtifacts(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// Call the getArtifacts function
-	getArtifacts(rr, req)
+	artifacts.GetArtifacts(rr, req)
 
 	// Check the response status code
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	// Check the response body
-	var artifacts []Artifact
+	var artifacts []artifacts.Artifact
 	err = json.Unmarshal(rr.Body.Bytes(), &artifacts)
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +62,7 @@ func TestArtifactCRUD(t *testing.T) {
 
 	artifactId := primitive.NewObjectID()
 
-	artifact := Artifact{
+	artifact := artifacts.Artifact{
 		ID:             artifactId,
 		Name:           "Sample Artifact",
 		Description:    "This is a sample artifact.",
@@ -93,7 +94,7 @@ func TestArtifactCRUD(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// Call the getArtifacts function
-	createArtifact(rr, req)
+	artifacts.CreateArtifact(rr, req)
 
 	// --------------------------------------------------------------------
 	// [R] Then READ the record using the GET endpoint
@@ -111,7 +112,7 @@ func TestArtifactCRUD(t *testing.T) {
 	rr = httptest.NewRecorder()
 
 	// Call the getArtifacts function
-	getArtifact(rr, req)
+	artifacts.GetArtifact(rr, req)
 
 	// Assert the ID value using testify/assert
 	assert.Equal(t, "Sample Artifact", artifact.Name)
@@ -119,7 +120,7 @@ func TestArtifactCRUD(t *testing.T) {
 	// --------------------------------------------------------------------
 	// [U] Then attempt to UPDATE the record with a new name
 
-	artifact = Artifact{
+	artifact = artifacts.Artifact{
 		ID:             artifactId,
 		Name:           "Sample Artifact Updated",
 		Description:    "This is an updated sample artifact.",
@@ -151,7 +152,7 @@ func TestArtifactCRUD(t *testing.T) {
 	rr = httptest.NewRecorder()
 
 	// Call the getArtifacts function
-	updateArtifact(rr, req)
+	artifacts.UpdateArtifact(rr, req)
 
 	// Assert the ID value using testify/assert
 	assert.Equal(t, "Sample Artifact Updated", artifact.Name)
@@ -178,7 +179,7 @@ func TestArtifactCRUD(t *testing.T) {
 	rr = httptest.NewRecorder()
 
 	// Call the getArtifacts function
-	deleteArtifact(rr, req)
+	artifacts.DeleteArtifact(rr, req)
 
 	// --------------------------------------------------------------------
 	// [R] Then READ the - should be - missing record using the GET endpoint
@@ -196,7 +197,7 @@ func TestArtifactCRUD(t *testing.T) {
 	rr = httptest.NewRecorder()
 
 	// Call the getArtifacts function
-	getArtifact(rr, req)
+	artifacts.GetArtifact(rr, req)
 
 	assert.Equal(t, "Invalid Artifact ID\n", rr.Body.String())
 
@@ -213,7 +214,7 @@ func generateRandomID(length int) string {
 	return randomID[:length] // Trim the string to the desired length
 }
 
-func compareSearchResult(searchReq *http.Request, expectedArtifact Artifact) (bool, error) {
+func compareSearchResult(searchReq *http.Request, expectedArtifact artifacts.Artifact) (bool, error) {
 	// Create a new response recorder for the search
 	rr := httptest.NewRecorder()
 
@@ -221,7 +222,7 @@ func compareSearchResult(searchReq *http.Request, expectedArtifact Artifact) (bo
 	searchReq.Header.Set("Content-Type", "application/json")
 
 	// Call the searchArtifacts function
-	searchArtifacts(rr, searchReq)
+	artifacts.SearchArtifacts(rr, searchReq)
 
 	// Check the response status code
 	if rr.Code != http.StatusOK {
@@ -230,7 +231,7 @@ func compareSearchResult(searchReq *http.Request, expectedArtifact Artifact) (bo
 	}
 
 	// Parse the response body
-	var searchResult []Artifact
+	var searchResult []artifacts.Artifact
 	if err := json.NewDecoder(rr.Body).Decode(&searchResult); err != nil {
 		return false, err
 	}
@@ -259,7 +260,7 @@ func TestArtifactSearch(t *testing.T) {
 	randomSearchString := generateRandomID(8)       // Use the full string to allow searching for a specific artifact
 	randomSearchSubString := randomSearchString[:4] // Use the first four characters to search with `contains`
 
-	artifact := Artifact{
+	artifact := artifacts.Artifact{
 		ID:             artifactId,
 		Name:           "Sample Search Artifact-" + randomSearchString, // name
 		Description:    "This is a sample search artifact.",
@@ -304,7 +305,7 @@ func TestArtifactSearch(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// Call the getArtifacts function
-	createArtifact(rr, req)
+	artifacts.CreateArtifact(rr, req)
 
 	// Check the response status code
 	if rr.Code != http.StatusOK {
