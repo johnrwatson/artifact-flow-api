@@ -14,8 +14,10 @@ type ValidationRule struct {
 	ID           primitive.ObjectID     `json:"id,omitempty" bson:"_id,omitempty"`
 	Name         string                 `json:"name,omitempty" bson:"name,omitempty"`
 	Description  string                 `json:"description,omitempty" bson:"description,omitempty"`
-	RuleStrategy string                 `json:"ruleStrategy,omitempty" bson:"ruleStrategy,omitempty"`
+	Enforced     bool                 `json:"enforced,omitempty" bson:"enforced,omitempty"`
 	RuleFamily   string                 `json:"ruleFamily,omitempty" bson:"ruleFamily,omitempty"`
+	RuleType     string                 `json:"ruleType,omitempty" bson:"ruleType,omitempty"`
+	RuleLimits   map[string]interface{} `json:ruleLimits,omitempty" bson:"ruleLimits,omitempty"`
 	Environments map[string]interface{} `json:environments,omitempty" bson:"environments,omitempty"`
 }
 
