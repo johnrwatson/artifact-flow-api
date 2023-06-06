@@ -35,7 +35,7 @@ func main() {
 	// Initialize router
 	router := mux.NewRouter()
 
-	// Register a middleware function to be used for all requests
+	// Register the authentication middleware function
 	router.Use(auth.Middleware)
 
 	// API endpoints for Artifacts
@@ -46,11 +46,23 @@ func main() {
 	router.HandleFunc("/artifacts/{id}", artifacts.UpdateArtifact).Methods("PUT")
 	router.HandleFunc("/artifacts/{id}", artifacts.DeleteArtifact).Methods("DELETE")
 
-	// API endpoints for ValidationRules
+	// API endpoints for Validation Rules
 	router.HandleFunc("/validation/rules", validation.CreateRule).Methods("POST")
 	router.HandleFunc("/validation/rules", validation.GetRules).Methods("GET")
+	router.HandleFunc("/validation/rules/{id}", validation.GetRule).Methods("GET")
+	router.HandleFunc("/validation/rules/search", validation.SearchRules).Methods("POST")
+	router.HandleFunc("/validation/rules/{id}", validation.UpdateRule).Methods("PUT")
+	router.HandleFunc("/validation/rules/{id}", validation.DeleteRule).Methods("DELETE")
 
-	// Protected Auth Handlers
+	// API endpoints for Validation Rule Mappings
+	router.HandleFunc("/validation/mappings", validation.CreateRuleMapping).Methods("POST")
+	router.HandleFunc("/validation/mappings", validation.GetRuleMappings).Methods("GET")
+	router.HandleFunc("/validation/mappings/{id}", validation.GetRuleMapping).Methods("GET")
+	router.HandleFunc("/validation/mappings/search", validation.SearchRuleMappings).Methods("POST")
+	router.HandleFunc("/validation/mappings/{id}", validation.UpdateRuleMapping).Methods("PUT")
+	router.HandleFunc("/validation/mappings/{id}", validation.DeleteRuleMapping).Methods("DELETE")
+
+	// Generate a Static API Key for Artifact-Flow
 	router.HandleFunc("/auth/apikey", auth.ApiKeyHandler).Methods("GET")
 
 	// Unprotected Supporting Handlers

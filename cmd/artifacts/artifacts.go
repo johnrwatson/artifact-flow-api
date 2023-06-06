@@ -197,6 +197,8 @@ func UpdateArtifact(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&artifact)
 
 	collection := client.Database(artifactDbName).Collection(artifactColName)
+
+	// This logic needs improved to update only the fields passed within the PUT, rather than assuming they were all passed
 	update := bson.M{
 		"$set": bson.M{
 			"name":             artifact.Name,
