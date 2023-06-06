@@ -19,16 +19,18 @@ import (
 // Connection string for MongoDB
 const connectionString = "mongodb://localhost:27017"
 
-// Database Name
-const dbName = "artifactdb"
+// Database & Collection for Artifacts
+const artifactsDbName = "artifactdb"
+const artifactsColName = "artifacts"
 
-// Collection name
-const collName = "artifacts"
+// Database & Collection for Validation
+const validationDbName = "validationdb"
+const validationColName = "validationrules"
 
 // MongoDB client
 var client *mongo.Client
 
-func ClearDatabaseArtifacts() error {
+func ClearDatabaseArtifacts(dbName string, colName string) error {
 	// Initialize MongoDB client
 	clientOptions := options.Client().ApplyURI(connectionString)
 	client, err := mongo.Connect(context.Background(), clientOptions)
@@ -37,7 +39,7 @@ func ClearDatabaseArtifacts() error {
 	}
 
 	// Access the "artifacts" collection
-	collection := client.Database(dbName).Collection(collName)
+	collection := client.Database(dbName).Collection(colName)
 
 	// Delete all documents in the collection
 	res, err := collection.DeleteMany(context.Background(), bson.D{{}})
@@ -57,5 +59,6 @@ func ClearDatabaseArtifacts() error {
 }
 
 func main() {
-	ClearDatabaseArtifacts()
+	ClearDatabaseArtifacts(artifactsDbName, artifactsColName)
+	ClearDatabaseArtifacts(validationDbName, validationColName)
 }
