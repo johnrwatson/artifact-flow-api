@@ -22,8 +22,8 @@ type Artifact struct {
 }
 
 // Database & Collection for Artifacts
-const artifactDbName = "artifactdb"
-const artifactColName = "artifacts"
+const ArtifactDbName = "artifactdb"
+const ArtifactColName = "artifacts"
 
 // MongoDB client
 var client, _ = database.SetupMongoDbClient()
@@ -44,7 +44,7 @@ func CreateArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	collection := client.Database(artifactDbName).Collection(artifactColName)
+	collection := client.Database(ArtifactDbName).Collection(ArtifactColName)
 	result, err := collection.InsertOne(r.Context(), artifact)
 	if err != nil {
 		http.Error(w, "Unable to insert the record into the database", 417)
@@ -63,7 +63,7 @@ func GetArtifacts(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Info: Getting all Artifacts")
 	var artifacts []Artifact
 
-	collection := client.Database(artifactDbName).Collection(artifactColName)
+	collection := client.Database(ArtifactDbName).Collection(ArtifactColName)
 	cursor, err := collection.Find(r.Context(), bson.M{})
 
 	if err != nil {
@@ -103,7 +103,7 @@ func SearchArtifacts(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("Info: Searching Artifacts by " + filter.SearchKey + " where the attribute is set to " + filter.SearchValue + " with verb set to: " + filter.SearchVerb)
 
-	collection := client.Database(artifactDbName).Collection(artifactColName)
+	collection := client.Database(ArtifactDbName).Collection(ArtifactColName)
 
 	// Build the filter
 	query := bson.M{}
@@ -171,7 +171,7 @@ func GetArtifact(w http.ResponseWriter, r *http.Request) {
 
 	var artifact Artifact
 
-	collection := client.Database(artifactDbName).Collection(artifactColName)
+	collection := client.Database(ArtifactDbName).Collection(ArtifactColName)
 
 	err = collection.FindOne(r.Context(), bson.M{"_id": id}).Decode(&artifact)
 	if err != nil {
@@ -196,7 +196,7 @@ func UpdateArtifact(w http.ResponseWriter, r *http.Request) {
 	var artifact Artifact
 	_ = json.NewDecoder(r.Body).Decode(&artifact)
 
-	collection := client.Database(artifactDbName).Collection(artifactColName)
+	collection := client.Database(ArtifactDbName).Collection(ArtifactColName)
 
 	// This logic needs improved to update only the fields passed within the PUT, rather than assuming they were all passed
 	update := bson.M{
@@ -227,7 +227,7 @@ func DeleteArtifact(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id, _ := primitive.ObjectIDFromHex(params["id"])
 
-	collection := client.Database(artifactDbName).Collection(artifactColName)
+	collection := client.Database(ArtifactDbName).Collection(ArtifactColName)
 	_, err := collection.DeleteOne(r.Context(), bson.M{"_id": id})
 	if err != nil {
 		http.Error(w, "Unable to purge selected record out of the database", http.StatusBadRequest)
