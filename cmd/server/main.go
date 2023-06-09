@@ -62,6 +62,9 @@ func main() {
 	router.HandleFunc("/validation/mappings/{id}", validation.UpdateRuleMapping).Methods("PUT")
 	router.HandleFunc("/validation/mappings/{id}", validation.DeleteRuleMapping).Methods("DELETE")
 
+	// API endpoints for Validation of Artifacts
+	router.HandleFunc("/validation/artifacts", validation.ValidateArtifact).Methods("POST")
+
 	// Generate a Static API Key for Artifact-Flow
 	router.HandleFunc("/auth/apikey", auth.ApiKeyHandler).Methods("GET")
 

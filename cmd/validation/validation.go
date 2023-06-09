@@ -1,6 +1,7 @@
 package validation
 
 import (
+	artifacts "artifactflow.com/m/v2/cmd/artifacts"
 	database "artifactflow.com/m/v2/cmd/database"
 	"context"
 	"encoding/json"
@@ -10,6 +11,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"net/http"
+	"reflect"
+	"strings"
 )
 
 type ValidationRule struct {
@@ -17,15 +20,21 @@ type ValidationRule struct {
 	Name        string                 `json:"name,omitempty" bson:"name,omitempty"`               // 80percent_code_coverage
 	Description string                 `json:"description,omitempty" bson:"description,omitempty"` // All code must have at least 80% code coverage
 	RuleFamily  string                 `json:"ruleFamily,omitempty" bson:"ruleFamily,omitempty"`   // code
-	RuleType    string                 `json:"ruleType,omitempty" bson:"ruleType,omitempty"`       // range / max / min / match
+	RuleType    string                 `json:"ruleType,omitempty" bson:"ruleType,omitempty"`       // range / max / min / equal
 	RuleLimits  map[string]interface{} `json:"ruleLimits,omitempty" bson:"ruleLimits,omitempty"`   // { min: 5, max: 10 }
+	RuleKey     string                 `json:"ruleKey,omitempty" bson:"ruleKey,omitempty"`         // metadata.cve.high
 }
 
 type ValidationRuleMapping struct {
-	ID           primitive.ObjectID     `json:"id,omitempty" bson:"_id,omitempty"`
-	RuleId       primitive.ObjectID     `json:"ruleId,omitempty" bson:"ruleId,omitempty"`             // 647f85e6e9fd4a733a4c6b8b
-	Environments map[string]interface{} `json:"environments,omitempty" bson:"environments,omitempty"` // { development: true, preproduction: false, production: false }
-	Enforced     bool                   `json:"enforced,omitempty" bson:"enforced,omitempty"`         // false / true
+	ID                 primitive.ObjectID     `json:"id,omitempty" bson:"_id,omitempty"`
+	RuleId             primitive.ObjectID     `json:"ruleId,omitempty" bson:"ruleId,omitempty"`                         // 647f85e6e9fd4a733a4c6b8b
+	ActiveEnvironments map[string]interface{} `json:"activeEnvironments,omitempty" bson:"activeEnvironments,omitempty"` // { development: true }
+	Enforced           bool                   `json:"enforced,omitempty" bson:"enforced,omitempty"`                     // false / true
+}
+
+type ValidationRequest struct {
+	ArtifactID  string `json:"artifactId"`
+	Environment string `json:"environment"`
 }
 
 // Database & Collection for Validation & Mappings
@@ -35,6 +44,10 @@ const validationRuleMappingColName = "validationmappings"
 
 // MongoDB client
 var client, _ = database.SetupMongoDbClient()
+
+// --------------------------------------------
+// Validation Rules
+// --------------------------------------------
 
 // Create a Validation Rule
 func CreateRule(w http.ResponseWriter, r *http.Request) {
@@ -422,16 +435,16 @@ func UpdateRuleMapping(w http.ResponseWriter, r *http.Request) {
 	update := bson.M{
 		"$set": bson.M{
 			"ruleId":       validationRuleMapping.ID,
-			"environments": validationRuleMapping.Environments,
+			"environments": validationRuleMapping.ActiveEnvironments,
 			"enforced":     validationRuleMapping.Enforced,
 		},
 	}
 
 	type ValidationRuleMapping struct {
-		ID           primitive.ObjectID     `json:"id,omitempty" bson:"_id,omitempty"`
-		RuleId       primitive.ObjectID     `json:"ruleId,omitempty" bson:"ruleId,omitempty"`             // 647f85e6e9fd4a733a4c6b8b
-		Environments map[string]interface{} `json:"environments,omitempty" bson:"environments,omitempty"` // { development: true, preproduction: false, production: false }
-		Enforced     bool                   `json:"enforced,omitempty" bson:"enforced,omitempty"`         // false / true
+		ID                 primitive.ObjectID     `json:"id,omitempty" bson:"_id,omitempty"`
+		RuleId             primitive.ObjectID     `json:"ruleId,omitempty" bson:"ruleId,omitempty"`             // 647f85e6e9fd4a733a4c6b8b
+		ActiveEnvironments map[string]interface{} `json:"environments,omitempty" bson:"environments,omitempty"` // { development: true, preproduction: false, production: false }
+		Enforced           bool                   `json:"enforced,omitempty" bson:"enforced,omitempty"`         // false / true
 	}
 
 	_, err := collection.UpdateOne(r.Context(), bson.M{"_id": id}, update)
@@ -462,6 +475,307 @@ func DeleteRuleMapping(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode("validationRuleMapping record deleted successfully.")
 
+}
+
+// --------------------------------------------
+// Validation of Artifacts
+// --------------------------------------------
+
+// Validate whether an Artifact is suitable for Environment
+func ValidateArtifact(w http.ResponseWriter, r *http.Request) {
+	var req ValidationRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Retrieve the artifact and validation rules from MongoDB
+	artifact, err := getArtifactByID(req.ArtifactID)
+	if err != nil {
+		http.Error(w, "Failed to retrieve artifact", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Println("Artifact Record:")
+	fmt.Printf("%+v\n", artifact)
+
+	rules, err := getValidationRulesForEnvironment(req.Environment)
+	if err != nil {
+		http.Error(w, "Failed to retrieve validation rules", http.StatusInternalServerError)
+		return
+	}
+
+    fmt.Println("Rules below:")
+	fmt.Printf("%+v\n", rules)
+
+	// Perform validation check
+	passesValidation := validateArtifactAgainstRules(artifact, rules)
+
+
+	// Return the result
+	result := struct {
+		PassesValidation bool `json:"passesValidation"`
+	}{
+		PassesValidation: passesValidation,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func getArtifactByID(artifactID string) (*artifacts.Artifact, error) {
+	// Implementation to retrieve the artifact by ID from MongoDB
+	collection := client.Database(artifacts.ArtifactDbName).Collection(artifacts.ArtifactColName)
+
+	// Convert the string ID to an ObjectID if not already
+	id, err := primitive.ObjectIDFromHex(artifactID)
+	if err != nil {
+		return nil, err
+	}
+
+	var artifact artifacts.Artifact
+
+	err = collection.FindOne(context.TODO(), bson.M{"_id": id}).Decode(&artifact)
+	if err != nil {
+		return nil, err
+	}
+
+	return &artifact, nil
+}
+
+func getValidationRulesForEnvironment(environment string) ([]ValidationRule, error) {
+	// Implementation to retrieve the validation rules for the given environment from MongoDB
+	collection := client.Database(validationDbName).Collection(validationRuleMappingColName)
+
+	// Build the filter
+	query := bson.M{"environments." + environment: true}
+
+	var validationRules []ValidationRule
+
+	cursor, err := collection.Find(context.TODO(), query)
+	if err != nil {
+		return nil, err
+	}
+
+	defer cursor.Close(context.TODO())
+
+	for cursor.Next(context.TODO()) {
+		var validationRuleMapping ValidationRuleMapping
+		if err := cursor.Decode(&validationRuleMapping); err != nil {
+			return nil, err
+		}
+
+		ruleID := validationRuleMapping.RuleId
+
+		rule, err := getRuleByID(ruleID)
+		if err != nil {
+			return nil, err
+		}
+
+		validationRules = append(validationRules, *rule)
+	}
+
+	return validationRules, nil
+}
+
+func getRuleByID(ruleID primitive.ObjectID) (*ValidationRule, error) {
+	// Implementation to retrieve the validation rule by ID from MongoDB
+	collection := client.Database(validationDbName).Collection(validationRuleColName)
+
+	var validationRule ValidationRule
+
+	err := collection.FindOne(context.TODO(), bson.M{"_id": ruleID}).Decode(&validationRule)
+	if err != nil {
+		return nil, err
+	}
+
+	return &validationRule, nil
+}
+
+func validateArtifactAgainstRules(artifact *artifacts.Artifact, rules []ValidationRule) bool {
+	for _, rule := range rules {
+		if !validateRule(artifact, rule) {
+			return false
+		}
+	}
+	return true
+}
+
+func getNestedFieldValue(artifact interface{}, ruleKey string) (interface{}, bool) {
+	
+	// Split the rule key into nested fields
+	fields := strings.Split(ruleKey, ".")
+
+	// Traverse the nested fields
+	value := reflect.ValueOf(artifact)
+	for _, field := range fields {
+		// Check if the current field exists in the value
+		if value.Kind() == reflect.Ptr {
+			value = value.Elem()
+		}
+		if value.Kind() == reflect.Struct {
+			value = value.FieldByName(field)
+		} else if value.Kind() == reflect.Map {
+			value = value.MapIndex(reflect.ValueOf(field))
+		}
+
+		// If the field doesn't exist, break the loop
+		if !value.IsValid() {
+			break
+		} 
+	}
+
+	// Check if the value is valid (i.e., the field exists)
+	if value.IsValid() {
+		// Extract the specific value from the 'value' variable
+		var fieldValue float64
+		switch v := value.Interface().(type) {
+			case map[string]interface{}:
+				fieldValue = v["high"].(float64)
+		}
+		return int32(fieldValue), true
+	} else {
+		fmt.Printf("%s is not set in artifact\n", ruleKey)
+		return nil, false
+	}
+
+
+}
+
+func validateRule(artifact *artifacts.Artifact, rule ValidationRule) bool {
+	// Perform validation check based on the rule variant
+	switch rule.RuleType {
+
+	case "range":
+		limits := rule.RuleLimits
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Key not found")
+			return false
+		}
+		min, ok := limits["min"].(int32)
+		if !ok {
+			fmt.Println("min key incorrect type")
+			return false
+		}
+		max, ok := limits["max"].(int32)
+		if !ok {
+			fmt.Println("max key incorrect type")
+			return false
+		}
+
+		if v, ok := value.(int32); ok {
+			if v < min || v > max {
+				fmt.Println("Value outside rule range")
+				return false
+			}
+		} else {
+			fmt.Println("Invalid Type of artifact key")
+			return false
+		}
+
+	case "max":
+		limits := rule.RuleLimits
+
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Key not found")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		max, ok := limits["value"].(int32)
+		if !ok {
+			fmt.Println("max key missing or not of type int32")
+			// Invalid rule format, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type int32
+		fmt.Printf("Value: %d\n", value)
+
+		if v, ok := value.(int32); ok {
+			if v > max {
+				fmt.Println("Value exceeds maximum")
+				// Value is above the maximum, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
+	case "min":
+		limits := rule.RuleLimits
+
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Key not found")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		min, ok := limits["value"].(int32)
+		if !ok {
+			fmt.Println("min key missing or not of type int32")
+			// Invalid rule format, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type int32
+		fmt.Printf("Value: %d\n", value)
+
+		if v, ok := value.(int32); ok {
+			if v < min {
+				fmt.Println("Value is below minimum")
+				// Value is below the minimum, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
+	case "equal":
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Key not found")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type int32
+		fmt.Printf("Value: %d\n", value)
+
+		ruleValue, ok := rule.RuleLimits["value"].(int32)
+		if !ok {
+			fmt.Println("rule.RuleLimits['value'] missing or not of type int32")
+			// Invalid rule format, consider it as failed
+			return false
+		}
+
+		if v, ok := value.(int32); ok {
+			if v != ruleValue {
+				fmt.Println("Value does not match")
+				// Value does not match the rule value, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
+	default:
+		// Invalid rule type, consider it as failed
+		return false
+	}
+
+	fmt.Println("Rule met satisfactorly")
+	return true
 }
 
 // ------------------------------------------------------------------------------------------
