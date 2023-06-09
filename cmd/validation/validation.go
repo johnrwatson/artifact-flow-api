@@ -646,6 +646,7 @@ func getNestedFieldValue(artifact interface{}, ruleKey string) (interface{}, boo
 func validateRule(artifact *artifacts.Artifact, rule ValidationRule) bool {
 	// Perform validation check based on the rule variant
 	switch rule.RuleType {
+
 	case "range":
 		limits := rule.RuleLimits
 		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
@@ -675,11 +676,99 @@ func validateRule(artifact *artifacts.Artifact, rule ValidationRule) bool {
 		}
 
 	case "max":
-		// Handle max rule type
+		limits := rule.RuleLimits
+
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Key not found")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		max, ok := limits["value"].(int32)
+		if !ok {
+			fmt.Println("max key missing or not of type int32")
+			// Invalid rule format, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type int32
+		fmt.Printf("Value: %d\n", value)
+
+		if v, ok := value.(int32); ok {
+			if v > max {
+				fmt.Println("Value exceeds maximum")
+				// Value is above the maximum, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
 	case "min":
-		// Handle min rule type
+		limits := rule.RuleLimits
+
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Key not found")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		min, ok := limits["value"].(int32)
+		if !ok {
+			fmt.Println("min key missing or not of type int32")
+			// Invalid rule format, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type int32
+		fmt.Printf("Value: %d\n", value)
+
+		if v, ok := value.(int32); ok {
+			if v < min {
+				fmt.Println("Value is below minimum")
+				// Value is below the minimum, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
 	case "equal":
-		// Handle match rule type
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Key not found")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type int32
+		fmt.Printf("Value: %d\n", value)
+
+		ruleValue, ok := rule.RuleLimits["value"].(int32)
+		if !ok {
+			fmt.Println("rule.RuleLimits['value'] missing or not of type int32")
+			// Invalid rule format, consider it as failed
+			return false
+		}
+
+		if v, ok := value.(int32); ok {
+			if v != ruleValue {
+				fmt.Println("Value does not match")
+				// Value does not match the rule value, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
 	default:
 		// Invalid rule type, consider it as failed
 		return false
