@@ -11,20 +11,23 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"net/http"
+	"reflect"
+	"strings"
 )
 
-type RuleLimit struct {
+type ValidationRuleLimits struct {
 	Type  string       `json:"type" bson:"type,omitempty"`
 	Value *interface{} `json:"value,omitempty" bson:"value,omitempty`
 }
 
 type ValidationRule struct {
-	ID          primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Name        string             `json:"name,omitempty" bson:"name,omitempty"`               // 80percent_code_coverage
-	Description string             `json:"description,omitempty" bson:"description,omitempty"` // All code must have at least 80% code coverage
-	RuleFamily  string             `json:"ruleFamily,omitempty" bson:"ruleFamily,omitempty"`   // code
-	RuleLimits  []RuleLimit        `json:"ruleLimits,omitempty" bson:"ruleLimits,omitempty"`   // { min: 5, max: 10 } / { value: 3 }
-	RuleKey     string             `json:"ruleKey,omitempty" bson:"ruleKey,omitempty"`         // metadata.cve.high
+	ID          primitive.ObjectID   `json:"id,omitempty" bson:"_id,omitempty"`
+	Name        string               `json:"name,omitempty" bson:"name,omitempty"`               // 80percent_code_coverage
+	Description string               `json:"description,omitempty" bson:"description,omitempty"` // All code must have at least 80% code coverage
+	RuleFamily  string               `json:"ruleFamily,omitempty" bson:"ruleFamily,omitempty"`   // code
+	RuleType    string               `json:"ruleType,omitempty" bson:"ruleType,omitempty"`       // range / max / min / equal
+	RuleLimits  ValidationRuleLimits `json:"ruleLimits,omitempty" bson:"ruleLimits,omitempty"`   // { min: 5, max: 10 } / { value: 3 }
+	RuleKey     string               `json:"ruleKey,omitempty" bson:"ruleKey,omitempty"`         // metadata.cve.high
 }
 
 type ValidationRuleMapping struct {
@@ -218,6 +221,7 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 		"$set": bson.M{
 			"name":        validationRule.Name,
 			"description": validationRule.Description,
+			"ruleType":    validationRule.RuleType,
 			"ruleFamily":  validationRule.RuleFamily,
 			"ruleLimits":  validationRule.RuleLimits,
 		},
@@ -498,8 +502,8 @@ func ValidateArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//fmt.Println("Artifact Record:")
-	//fmt.Printf("%+v\n", artifact)
+	fmt.Println("Artifact Record:")
+	fmt.Printf("%+v\n", artifact)
 
 	rules, err := getValidationRulesForEnvironment(req.Environment)
 	if err != nil {
@@ -508,37 +512,24 @@ func ValidateArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//fmt.Println("Rules below:")
-	//fmt.Printf("%+v\n", rules)
+	fmt.Println("Rules below:")
+	fmt.Printf("%+v\n", rules)
 
 	// Perform validation check
-	passesValidation, errorMap  := validateArtifactAgainstRules(artifact, rules)
+	passesValidation := validateArtifactAgainstRules(artifact, rules)
 
 	// Return the result
 	result := struct {
-		ArtifactId        string            `json:"artifactId"`
-		PassesValidation  bool              `json:"passesValidation"`
-		Environment       string            `json:"environment"`
-		Violations        map[string]string `json:"violations,omitempty"`
+		PassesValidation bool `json:"passesValidation"`
 	}{
-		ArtifactId:        req.ArtifactID,
-		PassesValidation:  passesValidation,
-		Environment:       req.Environment,
-	}
-
-	if !passesValidation {
-		violations := make(map[string]string)
-		for ruleKey, err := range errorMap {
-			violations[ruleKey] = err.Error()
-		}
-		result.Violations = violations
+		PassesValidation: passesValidation,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
 
-func getArtifactByID(artifactID string) (*artifacts.Artifact, error) {
+func getArtifactByID(artifactID string) (*Artifact, error) {
 	// Implementation to retrieve the artifact by ID from MongoDB
 	collection := client.Database(artifacts.ArtifactDbName).Collection(artifacts.ArtifactColName)
 
@@ -548,7 +539,7 @@ func getArtifactByID(artifactID string) (*artifacts.Artifact, error) {
 		return nil, err
 	}
 
-	var artifact artifacts.Artifact
+	var artifact Artifact
 
 	err = collection.FindOne(context.TODO(), bson.M{"_id": id}).Decode(&artifact)
 	if err != nil {
@@ -607,21 +598,189 @@ func getRuleByID(ruleID primitive.ObjectID) (*ValidationRule, error) {
 	return &validationRule, nil
 }
 
-func validateArtifactAgainstRules(artifact *artifacts.Artifact, rules []ValidationRule) (bool, map[string]error) {
-
-	errors := make(map[string]error)
-
+func validateArtifactAgainstRules(artifact *Artifact, rules []ValidationRule) bool {
 	for _, rule := range rules {
-		for _, lim := range rule.RuleLimits {
-			fmt.Println(rule, ":", lim)
-			if err := lim.Evaluate(*artifact, rule.RuleKey); len(err.Problems) != 0 {
-				errors[rule.RuleKey] = err
+		if !validateRule(artifact, rule) {
+			return false
+		}
+	}
+	return true
+}
+
+func getNestedFieldValue(v interface{}, keys []string) (interface{}, bool) {
+	curr := reflect.ValueOf(v)
+	for _, key := range keys {
+		// Check if the current value is a pointer and dereference it if necessary
+		if curr.Kind() == reflect.Ptr {
+			curr = curr.Elem()
+		}
+
+		// Check if the current value is a struct and retrieve the field by name
+		if curr.Kind() == reflect.Struct {
+			field := curr.FieldByName(key)
+			if !field.IsValid() {
+				return nil, false
 			}
+			curr = field
+		} else {
+			// If the current value is not a struct, return false
+			return nil, false
 		}
 	}
 
-	return len(errors) == 0, errors
+	return curr.Interface(), true
+}
 
+func lookupRuleValue(v reflect.Value, keys []string) (interface{}, bool) {
+	if len(keys) == 0 {
+		return v.Interface(), true
+	}
+
+	key := keys[0]
+	keys = keys[1:]
+
+	switch v.Kind() {
+	case reflect.Struct:
+		field := v.FieldByName(key)
+		if !field.IsValid() {
+			fmt.Println("Key Not Found in Struct - Field:", key)
+			return nil, false
+		}
+		return lookupRuleValue(field, keys)
+	case reflect.Map:
+		mapValue := v.MapIndex(reflect.ValueOf(key))
+		if !mapValue.IsValid() {
+			fmt.Println("Key Not Found in Map - Key:", key)
+			return nil, false
+		}
+		return lookupRuleValue(mapValue, keys)
+	default:
+		return nil, false
+	}
+}
+
+func validateRule(artifact *Artifact, rule ValidationRule) bool {
+
+	// Perform validation check based on the rule variant
+	limits := rule.RuleLimits
+	var min, max, ruleValue float64
+
+	// Checking which of the keys exist in the Limits struct,
+	// depending which rule type only some will exist
+	if limits.Min != nil {
+		min = *limits.Min
+	}
+	if limits.Max != nil {
+		max = *limits.Max
+	}
+	if limits.Value != nil {
+		ruleValue = *limits.Value
+	}
+
+	fmt.Println(min, max, ruleValue)
+	ruleKeys := strings.Split(rule.RuleKey, ".")
+
+	switch rule.RuleType {
+	case "range":
+		value, ok := getNestedFieldValue(artifact, ruleKeys)
+		fmt.Println("Value returned as:")
+		fmt.Println(value, ok)
+		if !ok {
+			fmt.Println("Min or Max Key(s) not found for range lookup")
+			return false
+		}
+		fmt.Println("Value found to be")
+        fmt.Println(value)
+		if v, ok := value.(*float64); ok {
+			if *v < min || *v > max {
+				fmt.Println("Value outside rule range")
+				return false
+			}
+		} else {
+			fmt.Println("Invalid Type of artifact key")
+			return false
+		}
+
+	/*case "max":
+
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Value Key not found for max lookup")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type *float64
+		fmt.Printf("Value: %f\n", value)
+
+		if v, ok := value.(*float64); ok {
+			if *v > max {
+				fmt.Println("Value exceeds maximum")
+				// Value is above the maximum, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
+	case "min":
+
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Value Key not found for min lookup")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type *float64
+		fmt.Printf("Value: %f\n", value)
+
+		if v, ok := value.(*float64); ok {
+			if *v < min {
+				fmt.Println("Value is below minimum")
+				// Value is below the minimum, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
+	case "equal":
+		value, ok := getNestedFieldValue(artifact, rule.RuleKey)
+		if !ok {
+			fmt.Println("Value Key not found for equal lookup")
+			// Key not found in artifact metadata, consider it as failed
+			return false
+		}
+
+		// Assuming 'value' is of type *float64
+		fmt.Printf("Value: %f\n", value)
+
+		if v, ok := value.(*float64); ok {
+			if *v != ruleValue {
+				fmt.Println("Value not equal")
+				// Value is not equal to the expected value, consider it as failed
+				return false
+			}
+		} else {
+			fmt.Println("Invalid value type")
+			// Invalid value type, consider it as failed
+			return false
+		}
+
+	*/
+	default:
+		fmt.Println("Unsupported rule type")
+		// Unsupported rule type, consider it as failed
+		return false
+	}
+
+	// Rule passed validation
+	return true
 }
 
 // ------------------------------------------------------------------------------------------
@@ -630,119 +789,11 @@ func validateArtifactAgainstRules(artifact *artifacts.Artifact, rules []Validati
 // Function to check the existence of a record in a collection
 func existenceValidator(dbName string, colName string, id primitive.ObjectID) (bool, error) {
 	collection := client.Database(dbName).Collection(colName)
-	//fmt.Println("searching for")
-	//fmt.Println(id)
+	fmt.Println("searching for")
+	fmt.Println(id)
 	count, err := collection.CountDocuments(context.Background(), bson.M{"_id": id})
 	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
-}
-
-func lookup(artifact artifacts.Artifact, metadata map[string]any, keys []string) (any, bool) {
-
-	//fmt.Println("------------SEARCHING FOR-----------------------------------------")
-	//fmt.Println(metadata, keys)
-
-	// If the key exists against the root object & isn't within the metadata lookup
-	if len(keys) == 1 && keys[0] != "artifactMetadata" {
-
-		// First check if child key in metadata
-		val, ok := metadata[keys[0]] // As it needs to skip the first key in this case
-		//fmt.Println("Metadata record found to be:")
-		//fmt.Println(metadata)
-		//fmt.Println("Is the key found?", val, ok)
-		if len(keys) == 1 && ok {
-			return val, ok
-		}
-
-		// If not, then it must be a root key
-		// Create a temporary map to check if the requested key exists in the struct
-		// This isn't great, but it'll work for now
-		rootFields := map[string]interface{}{
-			"id":             artifact.ID,
-			"name":           artifact.Name,
-			"description":    artifact.Description,
-			"artifactType":   artifact.ArtifactType,
-			"artifactFamily": artifact.ArtifactFamily,
-		}
-
-		val, ok = rootFields[keys[0]]
-		//fmt.Println("Scanning root keys", val, ok, "for", keys[0])
-		if ok {
-			return val, ok
-		}
-
-		return nil, false
-
-		// If the key is proposed to be within the metadata block, pass back it's children
-	} else if keys[0] == "artifactMetadata" {
-
-		//fmt.Println("Searching inside artifactmetadata", keys[0], metadata)
-
-		// base cases - this is a nil map, or no keys were given:
-		if metadata == nil || len(keys) == 0 {
-			return nil, false
-		}
-
-		// base cases - this is the last key, or this key is not found:
-		val, ok := metadata[keys[1]] // As it needs to skip the first key in this case
-		//fmt.Println("Is the key found?", val, ok)
-		//fmt.Println(len(keys), keys)
-		if len(keys) == 1 || !ok {
-			return val, ok
-		}
-
-		// base case: the child is not a map:
-		child, ok := val.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		//fmt.Println("Passing the lookup onto the next metadata key section", child, ok)
-		//fmt.Println("----------PASSING ONTO NEXT LOOP SECTION------------------------------------------")
-		// recursive case: ask the child to get the value
-		return lookup(artifact, child, keys[2:])
-	} else {
-		//fmt.Println("Searching deeper inside artifactmetadata", keys[0], metadata)
-
-		// base cases - this is a nil map, or no keys were given:
-		if metadata == nil || len(keys) == 0 {
-			return nil, false
-		}
-
-		// base cases - this is the last key, or this key is not found:
-		val, ok := metadata[keys[0]] // As it needs to skip the first key in this case
-
-		// -----LOGGING HELPER--------------------
-		// --------------------------------------------
-		subkeys := make([]string, len(metadata))
-		i := 0
-		for k := range metadata {
-			subkeys[i] = k
-		  i++
-		}
-		//fmt.Println("All keys shown below:")
-		//fmt.Println(subkeys)
-		//fmt.Println("Looking for key", keys[0])
-		// --------------------------------------------
-
-		//fmt.Println("Is the key found?", val, ok)
-		//fmt.Println(len(keys), keys)
-		if len(keys) == 1 || !ok {
-			return val, ok
-		}
-
-		// base case: the child is not a map:
-		child, ok := val.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		//fmt.Println("Passing the lookup onto the next metadata key section", child, ok)
-		//fmt.Println("----------PASSING ONTO NEXT LOOP SECTION------------------------------------------")
-		// recursive case: ask the child to get the value
-		return lookup(artifact, child, keys[1:])
-	}
-
-	return nil, false
-
 }
