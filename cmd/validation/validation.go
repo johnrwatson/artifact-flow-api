@@ -436,7 +436,7 @@ func UpdateRuleMapping(w http.ResponseWriter, r *http.Request) {
 	update := bson.M{
 		"$set": bson.M{
 			"ruleId":       validationRuleMapping.ID,
-			"environments": validationRuleMapping.ActiveEnvironments,
+			"environments": validationRuleMapping.Environments,
 			"enforced":     validationRuleMapping.Enforced,
 		},
 	}
@@ -444,7 +444,7 @@ func UpdateRuleMapping(w http.ResponseWriter, r *http.Request) {
 	type ValidationRuleMapping struct {
 		ID                 primitive.ObjectID     `json:"id,omitempty" bson:"_id,omitempty"`
 		RuleId             primitive.ObjectID     `json:"ruleId,omitempty" bson:"ruleId,omitempty"`             // 647f85e6e9fd4a733a4c6b8b
-		ActiveEnvironments map[string]interface{} `json:"environments,omitempty" bson:"environments,omitempty"` // { development: true, preproduction: false, production: false }
+		Environments       map[string]interface{} `json:"environments,omitempty" bson:"environments,omitempty"` // { development: true, preproduction: false, production: false }
 		Enforced           bool                   `json:"enforced,omitempty" bson:"enforced,omitempty"`         // false / true
 	}
 
