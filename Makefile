@@ -10,3 +10,6 @@ deploy:
 
 build:
 	go build ./cmd/server/main.go
+
+fmt:
+	go fmt ./cmd/...
