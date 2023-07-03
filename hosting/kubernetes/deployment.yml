@@ -34,7 +34,7 @@ spec:
           imagePullPolicy: Always
           readinessProbe:
             httpGet:
-              path: /artifacts
+              path: /health
               port: 80
             failureThreshold: 1
             periodSeconds: 10

@@ -27,6 +27,8 @@ var (
 	googleConfig *oauth2.Config
 	jwtKey       = []byte(os.Getenv("OAUTH_JWT_KEY"))
 	refreshToken string // Store the refresh token
+	Store  *sessions.CookieStore
+	Secret       = []byte(os.Getenv("OAUTH_SESSION_SECRET"))
 )
 
 type ResponseStruct struct {
@@ -35,10 +37,10 @@ type ResponseStruct struct {
 }
 
 // Claims represents the custom JWT claims structure
-type Claims struct {
+type CustomClaims struct {
 	Email        string `json:"email"`
 	ExpiresAt    int64  `json:"exp"`
-	RefreshToken string `json:"refresh_token"` // Add this field
+	RefreshToken string `json:"refresh_token"`
 	jwt.StandardClaims
 }
 
@@ -49,12 +51,6 @@ type ApiKey struct {
 	Key           string             `json:"apikey,omitempty" bson:"apikey,omitempty"`
 	GeneratedDate time.Time          `json:"generatedDate,omitempty" bson:"generatedDate,omitempty"`
 }
-
-// Session Storage
-var (
-	Store  *sessions.CookieStore
-	Secret = []byte(os.Getenv("OAUTH_SESSION_SECRET"))
-)
 
 // MongoDB client
 var client, _ = database.SetupMongoDbClient()
@@ -68,7 +64,7 @@ func SetupOauthProvider() bool {
 	oauthSessionSecret := os.Getenv("OAUTH_SESSION_SECRET")
 
 	// Check if any of the variables are empty or not set
-	if oauthClientId == "" || oauthClientSecret == "" || oauthRedirectURL == "" || oauthSessionSecret == "" || os.Getenv("OAUTH_JWT_KEY") == "" {
+	if oauthClientId == "" || oauthClientSecret == "" || oauthRedirectURL == "" || oauthSessionSecret == "" || jwtKey == nil {
 		fmt.Println("Error: One or more OAuth variables are not set, these are listed below: \n - OAUTH_CLIENT_ID\n - OAUTH_CLIENT_SECRET\n - OAUTH_REDIRECT_URL\n - OAUTH_SESSION_SECRET\n - OAUTH_JWT_KEY")
 		return false
 	}
@@ -123,7 +119,7 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer userinfo.Body.Close()
 
-	var claims Claims
+	var claims CustomClaims
 	if err := json.NewDecoder(userinfo.Body).Decode(&claims); err != nil {
 		http.Error(w, "Failed to decode userinfo", http.StatusBadRequest)
 		return
@@ -155,7 +151,7 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	session.Save(r, w)
 
-	log.Println("Lodged user in session store:", session.Values["emailID"], session.Values["uuid"])
+	log.Println("Lodged user in session store:", session.Values["GeneratedDate"], session.Values["uuid"])
 
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := jwtToken.SignedString(jwtKey)
@@ -183,7 +179,7 @@ func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 func RefreshAccessToken(refreshToken string) (string, error) {
 	if refreshToken == "" {
-		return "", errors.New("Refresh token not provided in original token")
+		return "", errors.New("Refresh token not provided in original token, unable to refresh authentication token automatically")
 	}
 
 	// Create a new OAuth2 config using the existing Google config and the refresh token
@@ -233,11 +229,11 @@ func RefreshAccessToken(refreshToken string) (string, error) {
 	return tokenString, nil
 }
 
-func ValidateToken(w http.ResponseWriter, r *http.Request) (*Claims, error) {
+func getTokenClaims(w http.ResponseWriter, r *http.Request) (*CustomClaims, error) {
 
 	tokenString := r.Header.Get("Authorization")
 	if tokenString == "" {
-		return nil, errors.New("Not able to process token from http headers")
+		return nil, errors.New("No token found in Authorization header")
 	}
 
 	// Remove 'Bearer ' prefix from token string
@@ -245,45 +241,29 @@ func ValidateToken(w http.ResponseWriter, r *http.Request) (*Claims, error) {
 		tokenString = tokenString[7:]
 	}
 
-	claims, err := getTokenClaims(w, r)
+	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return nil, errors.New("Failed to parse token")
+	}
+
+	claims, ok := token.Claims.(*CustomClaims)
+	if !ok || !token.Valid {
+
+		return nil, errors.New("Invalid token")
 	}
 
 	// Check if the token is expired + if so generate a new one
 	if time.Now().Unix() > claims.ExpiresAt {
 		tokenString, err = RefreshAccessToken(claims.RefreshToken)
 		if err != nil {
-			http.Error(w, "Failed to create refresh token. Likely due to missing token in the claim from the original or the original is invalid.", http.StatusUnauthorized)
-			fmt.Println(err)
+			return nil, err
 		}
 	}
 
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	})
-	if err != nil {
-		return nil, errors.New("Failed to parse token")
-	}
-
-	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
-		return nil, errors.New("Invalid token")
-	}
-
 	return claims, nil
-}
-
-func getTokenClaims(w http.ResponseWriter, r *http.Request) (*Claims, error) {
-
-	claims, err := ValidateToken(w, r)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return claims, nil
-
 }
 
 // When requesting a oauth token we need to skip the token validation inside the middleware
@@ -294,32 +274,40 @@ func Middleware(next http.Handler) http.Handler {
 
 		// Check if authentication is disabled
 		if os.Getenv("OPEN_ENDPOINTS") == "true" {
-			log.Println("OPEN_ENDPOINTS set to true, authentication disabled:", r.Method, r.URL.Path)
+			log.Println("Warning: INSECURE API - OPEN_ENDPOINTS variable set to true, authentication is disabled for all endpoints:", r.Method, r.URL.Path)
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		if r.URL.Path != "/health" && r.URL.Path != "/auth/login" && r.URL.Path != "/auth/callback" {
-			log.Println("Received request in Authentication:", r.Method, r.URL.Path)
+
 			_, err := getTokenClaims(w, r)
 
-			if err.Error() == "Not able to process token from http headers" {
+			if err != nil {
 
-				// Check if there is a session for this user
-				session, err := Store.Get(r, "session-name")
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+				if err.Error() == "No token found in Authorization header" {
+
+					// Check if there is a session for this user
+					session, err := Store.Get(r, "session-name")
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+
+					// Retrieve the user ID from the session
+					_, ok := session.Values["emailID"].(string)
+					if !ok {
+						http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
+					return
+						return
+					}
+
+					next.ServeHTTP(w, r)
+					return
+
 				}
 
-				// Retrieve the user ID from the session
-				_, ok := session.Values["emailID"].(string)
-				if !ok {
-					http.Error(w, "Unauthorized", http.StatusUnauthorized)
-					return
-				}
-
-			} else if err != nil {
 				http.Error(w, err.Error(), http.StatusUnauthorized)
 				return
 			}

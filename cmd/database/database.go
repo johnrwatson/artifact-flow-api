@@ -22,15 +22,22 @@ const authTokenColName = "tokens"
 
 // Get connection string
 func GetConnectionString() string {
+	username := os.Getenv("DB_USERNAME")
+	password := os.Getenv("DB_PASSWORD")
 
 	mongoDbConnectionString := os.Getenv("DB_CONNECTION_STRING")
 
-	// Check if the environment variable is set
+	// Check if the environment variables are set
 	if mongoDbConnectionString != "" {
 		return mongoDbConnectionString
 	}
 
-	// Return a default value if the environment variable is not set
+	// Build the connection string using the username and password if available
+	if username != "" && password != "" {
+		return fmt.Sprintf("mongodb://%s:%s@localhost:27017", username, password)
+	}
+
+	// Return a default value if the environment variables are not set
 	return "mongodb://localhost:27017"
 }
 
