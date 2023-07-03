@@ -272,6 +272,11 @@ func getTokenClaims(w http.ResponseWriter, r *http.Request) (*CustomClaims, erro
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
+		// CORS Policy for Frontend Access
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
+
 		// Check if authentication is disabled
 		if os.Getenv("OPEN_ENDPOINTS") == "true" {
 			log.Println("Warning: INSECURE API - OPEN_ENDPOINTS variable set to true, authentication is disabled for all endpoints:", r.Method, r.URL.Path)
