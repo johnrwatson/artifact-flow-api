@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/sessions"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"log"
@@ -285,8 +287,14 @@ func Middleware(next http.Handler) http.Handler {
 		}
 
 		if r.URL.Path != "/health" && r.URL.Path != "/auth/login" && r.URL.Path != "/auth/callback" {
+ 
+			var err error
 
-			_, err := getTokenClaims(w, r)
+			if (r.Header.Get("ArtifactFlow-Key") != "") {
+				err = validateApiKey(w, r)
+			} else if (r.Header.Get("Authorization") != "") {
+				_, err = getTokenClaims(w, r)
+			}
 
 			if err != nil {
 
@@ -329,6 +337,29 @@ func generateAPIKey() (string, error) {
 	return apiKey, nil
 }
 
+func validateApiKey(w http.ResponseWriter, r *http.Request) (error) {
+
+    apiKey := r.Header.Get("ArtifactFlow-Key")
+
+	// Access the "authdb" database and "tokens" collection
+	collection := client.Database("authdb").Collection("tokens")
+
+	// Query the database for the API key
+	filter := bson.M{"apikey": apiKey}
+	var result ApiKey
+	err := collection.FindOne(r.Context(), filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return errors.New("invalid API key")
+		}
+		return errors.New("error occurred while querying the database")
+	}
+
+	// API key exists and is valid
+	return nil
+
+}
+
 func ApiKeyHandler(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := getTokenClaims(w, r)
@@ -356,4 +387,6 @@ func ApiKeyHandler(w http.ResponseWriter, r *http.Request) {
 
 	apiKey.ID = result.InsertedID.(primitive.ObjectID)
 	json.NewEncoder(w).Encode(apiKey)
+
+	// Api Key that can be used to call Artifact Flow
 }
