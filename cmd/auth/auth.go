@@ -17,6 +17,11 @@ import (
 	"os"
 	"strings"
 	"time"
+	"encoding/base64"
+
+	"context"
+	"google.golang.org/api/idtoken"
+
 )
 
 // Database & Collection for Auth
@@ -25,7 +30,7 @@ const authTokenColName = "tokens"
 
 var (
 	googleConfig *oauth2.Config
-	jwtKey       = []byte(os.Getenv("OAUTH_JWT_KEY"))
+	jwtKey       = []uint8(os.Getenv("OAUTH_JWT_KEY"))
 	refreshToken string // Store the refresh token
 	Store  *sessions.CookieStore
 	Secret       = []byte(os.Getenv("OAUTH_SESSION_SECRET"))
@@ -50,6 +55,21 @@ type ApiKey struct {
 	UserID        string             `json:"userID,omitempty" bson:"userID,omitempty"`
 	Key           string             `json:"apikey,omitempty" bson:"apikey,omitempty"`
 	GeneratedDate time.Time          `json:"generatedDate,omitempty" bson:"generatedDate,omitempty"`
+}
+
+type PublicKeyInfo struct {
+	Use       string `json:"use"`
+	Kid       string `json:"kid"`
+	Kty       string `json:"kty"`
+	Alg       string `json:"alg"`
+	N         string `json:"n"`
+	E         string `json:"e"`
+	Algorithm string
+	PublicKey []byte  
+}
+
+type KeyResponse struct {
+	Keys []PublicKeyInfo `json:"keys"`
 }
 
 // MongoDB client
@@ -86,7 +106,7 @@ func SetupOauthProvider() bool {
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
-	if googleConfig.RedirectURL != "http://localhost:80" {
+	if googleConfig.RedirectURL == "http://localhost:80/auth/callback" {
 		// Before making the request, disable SSL certificate validation as the ca won't be valid
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
@@ -98,7 +118,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 func CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	code := r.FormValue("code")
 
-	if googleConfig.RedirectURL != "http://localhost:80" {
+	if googleConfig.RedirectURL == "http://localhost:80/auth/callback" {
 		// Before making the request, disable SSL certificate validation as the ca won't be valid
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
@@ -195,7 +215,7 @@ func RefreshAccessToken(refreshToken string) (string, error) {
 		RefreshToken: refreshToken,
 	}
 
-	if conf.RedirectURL == "http://localhost:8000" {
+	if conf.RedirectURL == "http://localhost:80/auth/callback" {
 		// Before making the request, disable SSL certificate validation as the ca mightn't be valid locally
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
@@ -231,6 +251,11 @@ func RefreshAccessToken(refreshToken string) (string, error) {
 
 func getTokenClaims(w http.ResponseWriter, r *http.Request) (*CustomClaims, error) {
 
+	if googleConfig.RedirectURL == "http://localhost:80/auth/callback" {
+		// Before making the request, disable SSL certificate validation as the ca won't be valid
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
 	tokenString := r.Header.Get("Authorization")
 	if tokenString == "" {
 		return nil, errors.New("No token found in Authorization header")
@@ -241,27 +266,116 @@ func getTokenClaims(w http.ResponseWriter, r *http.Request) (*CustomClaims, erro
 		tokenString = tokenString[7:]
 	}
 
-	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	})
+	// Getting the algorithm of the jwt signature
+	fmt.Printf("Type of jwtKey: %T\n", jwtKey)
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 {
+		fmt.Println("Invalid token format")
+	}
+	
+	// Decode the header
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		fmt.Println("Error decoding token header:", err)
+	}
+	
+	// Parse the header JSON
+	var header map[string]interface{}
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		fmt.Println("Error parsing token header:", err)
+	}
+	
+	// Extract the algorithm from the header
+	alg, ok := header["alg"].(string)
+	if !ok {
+		fmt.Println("Invalid or missing signing algorithm in token header")
+	}
+	
+	fmt.Println("Signing algorithm:", alg)
+	var token *jwt.Token
+
+	switch alg {
+	case "HS256":
+		fmt.Println("Handling HS256 algorithm")
+		token, err = jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+			return jwtKey, nil
+		})
+	case "RS256":
+		fmt.Println("Handling RS256 algorithm")
+		// Retrieve the public keys from the URL
+		
+		audience := "160220461475-r2h1nktt3nagkub9jdl6tds2ntoh8gsn.apps.googleusercontent.com" // This is the given audience of the FE
+	
+		// Create a context
+		ctx := context.Background()
+	
+		// Verify and parse the JWT
+		payload, err := idtoken.Validate(ctx, tokenString, audience)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Extract the claims from the payload
+		standardClaims := payload.Claims
+		for key, value := range standardClaims {
+			fmt.Printf("Key: %s, Value: %v\n", key, value)
+		}
+		issuer := standardClaims["iss"].(string)
+		subject := standardClaims["sub"].(string)
+		email := standardClaims["email"].(string)
+	
+		fmt.Println("Issuer:", issuer)
+		fmt.Println("Subject:", subject)
+		fmt.Println("Email:", email)
+
+
+		claims := &CustomClaims{
+			Email:        standardClaims["email"].(string),
+			ExpiresAt:    12345,
+			RefreshToken: "", // Set the refresh token value as needed
+			StandardClaims: jwt.StandardClaims{
+				Audience:  standardClaims["aud"].(string),
+				ExpiresAt: standardClaims["exp"].(int64),
+				Id:        "123",
+				IssuedAt:  standardClaims["iat"].(int64),
+				Issuer:    standardClaims["iss"].(string),
+				NotBefore: standardClaims["nbf"].(int64),
+				Subject:   standardClaims["sub"].(string),
+			},
+		}
+
+		if err != nil {
+			return nil, errors.New("JWT parsing failed:")
+		}
+
+		return claims, nil
+
+
+	default:
+		fmt.Println("")
+		return nil, errors.New("Unsupported JWT Algorithm: " + alg)
+	}
 
 	if err != nil {
+		fmt.Println(err)
 		return nil, errors.New("Failed to parse token")
 	}
 
+	fmt.Println("Checking the claims on the token")
 	claims, ok := token.Claims.(*CustomClaims)
+	fmt.Println("Finished checking claims on token")
 	if !ok || !token.Valid {
 
 		return nil, errors.New("Invalid token")
 	}
 
 	// Check if the token is expired + if so generate a new one
-	if time.Now().Unix() > claims.ExpiresAt {
-		tokenString, err = RefreshAccessToken(claims.RefreshToken)
-		if err != nil {
-			return nil, err
-		}
-	}
+	//if time.Now().Unix() > claims.ExpiresAt {
+	//	tokenString, err = RefreshAccessToken(claims.RefreshToken)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
 
 	return claims, nil
 }
@@ -286,7 +400,11 @@ func Middleware(next http.Handler) http.Handler {
 
 		if r.URL.Path != "/health" && r.URL.Path != "/auth/login" && r.URL.Path != "/auth/callback" {
 
+			fmt.Println("Getting token claims")
+
 			_, err := getTokenClaims(w, r)
+
+			fmt.Println("Checking the output of the check", err)
 
 			if err != nil {
 
